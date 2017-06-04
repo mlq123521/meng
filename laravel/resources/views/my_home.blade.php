@@ -7,7 +7,7 @@ License URL: http://creativecommons.org/licenses/by/3.0/
 <!DOCTYPE HTML>
 <html>
 <head>
-<title>梦梦家园</title>
+<title>梦梦家园欢迎你</title>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 <script src="{{asset('js/jquery.js')}}"></script>
 <script src="{{asset('js/kkcountdown.js')}}"></script>
