@@ -26,6 +26,7 @@
       .btn-ghost { background: #f3f4f6; color: #374151; }
       .btn:hover { opacity: .9; }
       .req { color: #dc2626; }
+      .opt { color: #9ca3af; font-weight: 400; font-size: 12px; }
     </style>
   </head>
   <body>
@@ -66,6 +67,11 @@
                 <option value="<%= s %>" <%= s === values.status ? "selected" : "" %>><%= s %></option>
               <% }) %>
             </select>
+          </div>
+
+          <div class="field">
+            <label>备注 <span class="opt">选填</span></label>
+            <textarea name="remark" placeholder="内部备注、跟进情况、决策链等"><%= values.remark %></textarea>
           </div>
 
           <div class="actions">

@@ -43,6 +43,7 @@ export const customers = pgTable(
     phone: text("phone").notNull(),
     demand: text("demand").notNull(),
     status: text("status").notNull().default("待跟进"),
+    remark: text("remark"),                  // 备注（可空）
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
@@ -50,6 +51,7 @@ export const customers = pgTable(
     check("customers_contact_name_len", sql`char_length(${t.contactName}) BETWEEN 1 AND 30`),
     check("customers_phone_format", sql`${t.phone} ~ '^1[3-9][0-9]{9}$'`),
     check("customers_demand_len", sql`char_length(${t.demand}) BETWEEN 1 AND 1000`),
+    check("customers_remark_len", sql`${t.remark} IS NULL OR char_length(${t.remark}) <= 500`),
     check("customers_status_valid", sql`${t.status} = ANY (${statusArray()})`),
   ],
 );

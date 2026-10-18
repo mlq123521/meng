@@ -630,7 +630,101 @@ section("20. 列表页摘要");
   }
 }
 
-/* ══════════════════ 21. 档案 CSV 导出 ══════════════════ */
+/* ══════════════════ 21. 备注字段 ══════════════════ */
+section("21. 备注字段");
+{
+  const RM = "RM" + Math.random().toString(36).slice(2, 7);
+  const remark = "由老客户张总引荐，预算充足，计划 Q4 启动";
+
+  // 需求登记
+  const r1 = await post("/", {
+    customerName: `${RM}需求A`, contactName: "甲", phone: "13811190001",
+    demand: "需要系统", status: "待跟进", remark,
+  });
+  ok("需求登记：带备注提交成功", r1.status === 302, `得到 ${r1.status}`);
+
+  // 需求创建成功后跳回列表（不是详情页），所以要从列表里找 id
+  const mkList = await req(`/?keyword=${RM}`);
+  const id = Number(mkList.body.match(/\/customers\/(\d+)"/)?.[1]);
+  ok("能在列表中定位记录", Number.isInteger(id) && id > 0, `解析失败`);
+
+  // 空备注应存为 NULL 而不是空字符串
+  const r2 = await post("/", {
+    customerName: `${RM}需求B`, contactName: "乙", phone: "13811190002",
+    demand: "简单", status: "沟通中", remark: "",
+  });
+  ok("需求登记：备注留空提交成功", r2.status === 302);
+
+  // 超长
+  const r3 = await post("/", {
+    customerName: `${RM}需求C`, contactName: "丙", phone: "13811190003",
+    demand: "x", status: "待跟进", remark: "备".repeat(501),
+  });
+  ok("需求登记：501 字备注被拒", r3.status === 400, `得到 ${r3.status}`);
+  ok("提示备注长度上限", r3.body.includes("备注") && r3.body.includes("500"));
+
+  // 恰好 500
+  const r4 = await post("/", {
+    customerName: `${RM}需求D`, contactName: "丁", phone: "13811190004",
+    demand: "x", status: "待跟进", remark: "备".repeat(500),
+  });
+  ok("需求登记：恰好 500 字备注被接受", r4.status === 302, `得到 ${r4.status}`);
+
+  // 列表页
+  const list = await req(`/?keyword=${RM}`);
+  ok("列表页有备注列", list.body.includes("<th>备注</th>"));
+  ok("列表页显示备注摘要", list.body.includes(remark) || list.body.includes("remarkSummary"));
+  ok("空备注显示占位符", list.body.includes("—"));
+
+  // 详情页
+  const detail = await req(`/customers/${id}`);
+  ok("详情页显示备注", detail.body.includes(remark), "详情页缺少备注");
+  ok("详情页有备注标签", detail.body.includes("备注"));
+
+  // 编辑页回填
+  const edit = await req(`/customers/${id}/edit`);
+  ok("编辑页回填备注", edit.body.includes(remark), "编辑页未回填");
+  ok("编辑表单有 remark 输入框", /name="remark"/.test(edit.body));
+
+  // 更新备注
+  const up = await post(`/customers/${id}`, {
+    customerName: `${RM}需求A`, contactName: "甲", phone: "13811190001",
+    demand: "需要系统", status: "已成交", remark: "改过的备注",
+  });
+  ok("更新备注返回 302", up.status === 302);
+  const after = await req(`/customers/${id}`);
+  ok("备注已更新", after.body.includes("改过的备注"), "备注没变");
+  ok("旧备注已消失", !after.body.includes("由老客户张总"), "旧备注还在");
+
+  // CSV 导出
+  const csv = await req("/export.csv?keyword=" + encodeURIComponent(RM));
+  ok("CSV 表头含备注", csv.body.includes("备注"), "表头缺备注列");
+  ok("CSV 含备注值", csv.body.includes("改过的备注"), "CSV 里没有备注值");
+
+  // 客户档案
+  const p1 = await post("/profiles", {
+    companyName: `${RM}档案A`, contactName: "联系人", phone: "13811190011",
+    source: "其他", remark: "档案备注内容",
+  });
+  ok("客户档案：带备注提交成功", p1.status === 302, `得到 ${p1.status}`);
+  const pid = Number(p1.headers.get("location")!.split("/").pop());
+  const pd = await req(`/profiles/${pid}`);
+  ok("档案详情显示备注", pd.body.includes("档案备注内容"));
+
+  const pl = await req("/profiles?keyword=" + encodeURIComponent(RM));
+  ok("档案列表有备注列", pl.body.includes("<th>备注</th>"));
+
+  const pe = await req(`/profiles/${pid}/edit`);
+  ok("档案编辑页回填备注", pe.body.includes("档案备注内容"));
+
+  // 清理
+  for (const cid of [...list.body.matchAll(/action="\/customers\/(\d+)\/delete"/g)].map((m) => m[1])) {
+    await post(`/customers/${cid}/delete`, {});
+  }
+  await post(`/profiles/${pid}/delete`, {});
+}
+
+/* ══════════════════ 22. 档案 CSV 导出 ══════════════════ */
 section("20. 档案 CSV 导出");
 {
   // 建 2 条可识别数据

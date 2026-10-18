@@ -109,6 +109,7 @@ export interface CustomerInput {
   contactName: string;
   phone: string;
   demand: string;
+  remark: string;
   status: string;
 }
 

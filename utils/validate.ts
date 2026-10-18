@@ -6,6 +6,7 @@ export const LIMITS = {
   contactName: 30,
   phone: 20,
   demand: 1000,
+  remark: 500,
 } as const;
 
 export type FieldName = keyof typeof LIMITS;
@@ -35,6 +36,11 @@ export const RULES: Record<FieldName, { label: string; test: (v: string) => bool
     test: (v) => v.length > 0 && v.length <= LIMITS.demand,
     hint: `必填，不超过 ${LIMITS.demand} 字`,
   },
+  remark: {
+    label: "备注",
+    test: (v) => v.length <= LIMITS.remark,
+    hint: `选填，不超过 ${LIMITS.remark} 字`,
+  },
 };
 
 export interface ValidationResult {
@@ -49,11 +55,14 @@ export function validateCustomer(input: {
   contactName: string;
   phone: string;
   demand: string;
+  remark: string;
   status: string;
 }): ValidationResult {
   for (const field of Object.keys(RULES) as FieldName[]) {
     const rule = RULES[field];
     const value = input[field];
+    // 选填字段留空直接跳过
+    if (value === "" && field === "remark") continue;
     if (!rule.test(value)) {
       return { ok: false, message: `${rule.label}：${rule.hint}` };
     }

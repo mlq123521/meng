@@ -20,6 +20,7 @@ const blank = (): CustomerInput => ({
   contactName: "",
   phone: "",
   demand: "",
+  remark: "",
   status: STATUSES[0],
 });
 
@@ -32,8 +33,14 @@ function readForm(body: unknown): CustomerInput {
     contactName: clip(b.contactName, 200),
     phone: clip(b.phone, 200),
     demand: clip(b.demand, 5000),
+    remark: clip(b.remark, 2000),
     status: String(b.status ?? STATUSES[0]).slice(0, 20),
   };
+}
+
+/** 表单数据 → 数据库行（备注空串转 NULL，保持「无值」语义一致） */
+function toRow(input: CustomerInput) {
+  return { ...input, remark: input.remark || null };
 }
 
 /** 校验表单：长度上限 + 手机号格式 + 状态白名单 */
@@ -51,6 +58,8 @@ function parseId(raw: string): number | null {
 
 /** 列表页需求描述的摘要长度 */
 const DEMAND_SUMMARY_LEN = 36;
+/** 列表页备注的摘要长度（比需求描述更短） */
+const REMARK_SUMMARY_LEN = 24;
 
 /** 构造分页链接：保留筛选条件，只换 page */
 export function pageLink(base: string, page: number, keyword: string, status: string): string {
@@ -73,11 +82,12 @@ export async function list(req: Request, res: Response): Promise<void> {
   const pages: number[] = [];
   for (let p = 1; p <= data.totalPages; p++) pages.push(p);
 
-  // 需求描述在列表页只显示摘要，完整内容去详情页看
+  // 列表页只显示摘要，完整内容去详情页看
   const list = data.list.map((c) => ({
     ...c,
     demandSummary: oneLine(c.demand, DEMAND_SUMMARY_LEN),
     demandLines: countLines(c.demand),
+    remarkSummary: oneLine(c.remark, REMARK_SUMMARY_LEN),
   }));
 
   res.render("customerList", {
@@ -100,7 +110,7 @@ export async function exportCsv(req: Request, res: Response): Promise<void> {
   });
 
   const table: unknown[][] = [
-    ["编号", "客户名", "联系人", "手机", "需求描述", "状态", "登记时间"],
+    ["编号", "客户名", "联系人", "手机", "需求描述", "状态", "备注", "登记时间"],
     ...rows.map((c) => [
       c.id,
       c.customerName,
@@ -108,6 +118,7 @@ export async function exportCsv(req: Request, res: Response): Promise<void> {
       c.phone,
       c.demand,
       c.status,
+      c.remark,
       c.createdAt.toISOString().slice(0, 19).replace("T", " "),
     ]),
   ];
@@ -150,7 +161,7 @@ export async function create(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  await createCustomer(values);
+  await createCustomer(toRow(values));
   res.redirect("/");
 }
 
@@ -217,7 +228,7 @@ export async function update(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const updated = await updateCustomer(id, values);
+  const updated = await updateCustomer(id, toRow(values));
   if (!updated) {
     res.status(404).render("customerNotFound", { id: req.params.id });
     return;

@@ -36,6 +36,11 @@
       .muted { color: #9ca3af; font-size: 13px; }
       .foot { text-align: center; }
       .row-actions { white-space: nowrap; }
+      /* 备注：单行省略 */
+      .remark-cell {
+        display: block; max-width: 180px; overflow: hidden;
+        text-overflow: ellipsis; white-space: nowrap; cursor: help;
+      }
       .btn-link { background: none; border: none; color: #2563eb; cursor: pointer; font-size: 13px; padding: 2px 6px; text-decoration: none; }
       .btn-link:hover { text-decoration: underline; }
       .btn-link.danger { color: #dc2626; }
@@ -87,6 +92,7 @@
               <th>邮箱</th>
               <th>行业</th>
               <th>来源</th>
+              <th>备注</th>
               <th>建档时间</th>
               <th>操作</th>
             </tr>
@@ -94,7 +100,7 @@
           <tbody>
             <% if (list.length === 0) { %>
               <tr>
-                <td colspan="10" class="empty">
+                <td colspan="11" class="empty">
                   <% if (keyword || source || industry) { %>
                     没有匹配的档案<br /><a href="/profiles">清空筛选条件</a>
                   <% } else { %>
@@ -114,6 +120,13 @@
                 <td><% if (p.email) { %><%= p.email %><% } else { %><span class="muted">—</span><% } %></td>
                 <td><% if (p.industry) { %><%= p.industry %><% } else { %><span class="muted">—</span><% } %></td>
                 <td><span class="tag"><%= p.source %></span></td>
+                <td style="max-width:180px;">
+                  <% if (p.remark) { %>
+                    <span class="remark-cell" title="<%= p.remark %>"><%= p.remark %></span>
+                  <% } else { %>
+                    <span class="muted">—</span>
+                  <% } %>
+                </td>
                 <td class="muted"><%= p.createdAt.toISOString().slice(0, 10) %></td>
                 <td class="row-actions">
                   <a class="btn-link" href="/profiles/<%= p.id %>">详情</a>

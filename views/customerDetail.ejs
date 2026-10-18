@@ -49,6 +49,7 @@
           <dt>联系人</dt><dd><%= customer.contactName %></dd>
           <dt>手机</dt><dd><%= customer.phone %></dd>
           <dt>需求描述</dt><dd class="demand"><%= customer.demand %></dd>
+          <dt>备注</dt><dd class="demand"><% if (customer.remark) { %><%= customer.remark %><% } else { %><span class="no">—</span><% } %></dd>
           <dt>登记时间</dt><dd><%= customer.createdAt.toISOString().slice(0, 19).replace("T", " ") %></dd>
         </dl>
 

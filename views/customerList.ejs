@@ -95,6 +95,7 @@
               <th>手机</th>
               <th>需求描述</th>
               <th>状态</th>
+              <th>备注</th>
               <th>登记时间</th>
               <th>操作</th>
             </tr>
@@ -102,7 +103,7 @@
           <tbody>
             <% if (list.length === 0) { %>
               <tr>
-                <td colspan="8" class="empty">
+                <td colspan="9" class="empty">
                   <% if (keyword || status) { %>
                     没有匹配的需求记录<br />
                     <a href="/">清空筛选条件</a>
@@ -130,6 +131,13 @@
                   <% } %>
                 </td>
                 <td><span class="tag"><%= c.status %></span></td>
+                <td class="demand-cell">
+                  <% if (c.remark) { %>
+                    <span class="demand-summary" title="<%= c.remark %>"><%= c.remarkSummary %></span>
+                  <% } else { %>
+                    <span class="muted">—</span>
+                  <% } %>
+                </td>
                 <td class="muted"><%= c.createdAt.toISOString().slice(0, 16).replace("T", " ") %></td>
                 <td class="actions-cell">
                   <a class="btn-link" href="/customers/<%= c.id %>">详情</a>
