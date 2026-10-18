@@ -59,15 +59,15 @@
         <div class="actions">
           <a class="btn btn-primary" href="/profiles">返回档案列表</a>
           <a class="btn btn-ghost" href="/profiles/import">继续导入</a>
-          <form method="post" action="/profiles/import/rollback"
-                onsubmit="return confirm('确定撤销本次导入吗？\n将删除本次新增的记录，并把被更新的记录还原为导入前的内容。')">
-            <input type="hidden" name="token" value="<%= rollbackToken %>" />
+          <form method="post" action="/profiles/import/<%= batchId %>/rollback"
+                onsubmit="return confirm('确定撤销本次导入吗？\n将删除本次新增的记录，并把被覆盖的记录还原为导入前的内容。')">
             <button type="submit" class="btn btn-danger">撤销本次导入</button>
           </form>
         </div>
 
         <p class="muted" style="margin-top:14px;">
-          ⚠️ 撤销只在当前页面有效 —— 关掉页面后再想撤销，请到数据库手动处理。
+          批次编号 #<%= batchId %> —— 撤销入口会保留在
+          <a href="/profiles/import">导入历史</a> 里，关掉本页也能随时撤销。
         </p>
       </div>
 

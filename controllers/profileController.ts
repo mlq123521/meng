@@ -6,9 +6,10 @@ import {
   createProfile,
   updateProfile,
   deleteProfile,
-  deleteProfilesByIds,
   importProfiles,
-  getProfilesByIds,
+  recordBatch,
+  listBatches,
+  rollbackBatch,
   PAGE_SIZE,
   type ProfileRow,
 } from "../models/profile";
@@ -16,6 +17,7 @@ import { SOURCES } from "../db/schema";
 import { validateProfile, type ProfileInput } from "../utils/validate";
 import { toCsv, csvHeaders } from "../utils/csv";
 import { parseCsv, normalizeHeader } from "../utils/csvParser";
+import { isUniqueViolation } from "../utils/pgError";
 
 /** 单次导入最大行数 */
 const MAX_ROWS = 500;
@@ -205,14 +207,16 @@ export function downloadTemplate(_req: Request, res: Response): void {
   res.send(body);
 }
 
-/** 导入页 */
-export function importPage(_req: Request, res: Response): void {
+/** 导入页（含历史批次） */
+export async function importPage(_req: Request, res: Response): Promise<void> {
   res.render("profileImport", {
     maxRows: MAX_ROWS,
     sources: SOURCES,
     templateHeaders: TEMPLATE_HEADERS,
     error: null,
     report: null,
+    notice: null,
+    batches: await listBatches(20),
   });
 }
 
@@ -306,130 +310,87 @@ function parseAndValidate(text: string) {
   return { error: null, valid, failed };
 }
 
+/** 统一的导入页渲染（错误提示 / 回滚结果 / 历史批次） */
+async function renderImportError(
+  res: Response,
+  error: string | null,
+  status = 400,
+  report: unknown = null,
+  rollbackResult: { removed: number; restored: number; message: string; ok: boolean } | null = null,
+) {
+  res.status(status).render("profileImport", {
+    maxRows: MAX_ROWS,
+    sources: SOURCES,
+    templateHeaders: TEMPLATE_HEADERS,
+    error,
+    report,
+    notice: rollbackResult
+      ? rollbackResult.ok
+        ? `批次已撤销：删除新增记录 ${rollbackResult.removed} 条，还原被覆盖记录 ${rollbackResult.restored} 条。`
+        : rollbackResult.message
+      : null,
+    batches: await listBatches(20),
+  });
+}
+
 /** POST /profiles/import —— 执行导入 */
 export async function importCsv(req: Request, res: Response): Promise<void> {
   const file = (req as any).file;
 
-  if (!file) {
-    res.status(400).render("profileImport", {
-      maxRows: MAX_ROWS, sources: SOURCES, templateHeaders: TEMPLATE_HEADERS,
-      error: "请选择一个 CSV 文件", report: null,
-    });
-    return;
-  }
+  if (!file) return renderImportError(res, "请选择一个 CSV 文件");
 
   const originalName = String(file.originalname ?? "");
   if (!/\.csv$/i.test(originalName)) {
-    res.status(400).render("profileImport", {
-      maxRows: MAX_ROWS, sources: SOURCES, templateHeaders: TEMPLATE_HEADERS,
-      error: `只支持 .csv 文件，收到的是「${originalName}」`, report: null,
-    });
-    return;
+    return renderImportError(res, `只支持 .csv 文件，收到的是「${originalName}」`);
   }
 
   const buffer: Buffer = file.buffer;
   // UTF-8 下 500 行中文 CSV 约 150KB，留足余量
   if (buffer.length > 2 * 1024 * 1024) {
-    res.status(413).render("profileImport", {
-      maxRows: MAX_ROWS, sources: SOURCES, templateHeaders: TEMPLATE_HEADERS,
-      error: "文件超过 2MB，请拆分后再导入", report: null,
-    });
-    return;
+    return renderImportError(res, "文件超过 2MB，请拆分后再导入", 413);
   }
 
   const text = buffer.toString("utf8");
   const { error, valid, failed } = parseAndValidate(text);
 
-  if (error) {
-    res.status(400).render("profileImport", {
-      maxRows: MAX_ROWS, sources: SOURCES, templateHeaders: TEMPLATE_HEADERS,
-      error, report: null,
-    });
-    return;
-  }
+  if (error) return renderImportError(res, error);
 
   if (valid.length === 0) {
-    res.status(400).render("profileImport", {
-      maxRows: MAX_ROWS, sources: SOURCES, templateHeaders: TEMPLATE_HEADERS,
-      error: "没有任何一行通过校验",
-      report: { total: failed.length, insertedCount: 0, updatedCount: 0, failed, rollbackToken: null },
+    return renderImportError(res, "没有任何一行通过校验", 400, {
+      total: failed.length, inserted: [], updated: [], failed,
     });
-    return;
   }
 
   const { inserted, updated, backup } = await importProfiles(valid);
 
+  // 落一条批次记录，之后随时可以按批次 id 回滚
+  const batchId = await recordBatch({
+    fileName: originalName,
+    totalRows: valid.length + failed.length,
+    failedCount: failed.length,
+    inserted,
+    backup,
+  });
+
   res.render("profileImportResult", {
     fileName: originalName,
+    batchId,
     total: valid.length + failed.length,
     inserted,
     updated,
     failed,
-    // 回滚用：新建记录记 id，被更新的记录用【更新前】的原始值
-    rollbackToken: JSON.stringify({
-      insertedIds: inserted.map((r) => r.id),
-      backup,
-    }),
   });
 }
 
-/** POST /profiles/import/rollback —— 撤销本次导入 */
+/** POST /profiles/import/:batchId/rollback —— 按批次撤销（关掉页面也能回滚） */
 export async function rollbackImport(req: Request, res: Response): Promise<void> {
-  const token = String(req.body.token ?? "");
-  if (!token) {
-    res.status(400).render("profileImport", {
-      maxRows: MAX_ROWS, sources: SOURCES, templateHeaders: TEMPLATE_HEADERS,
-      error: "缺少回滚数据", report: null,
-    });
-    return;
-  }
+  const batchId = parseId(req.params.batchId ?? "");
+  if (batchId === null) return renderImportError(res, "批次编号不合法");
 
-  let parsed: { insertedIds: number[]; backup: any[] };
-  try {
-    parsed = JSON.parse(token);
-  } catch {
-    res.status(400).render("profileImport", {
-      maxRows: MAX_ROWS, sources: SOURCES, templateHeaders: TEMPLATE_HEADERS,
-      error: "回滚数据已损坏，无法撤销", report: null,
-    });
-    return;
-  }
-
-  const ids = Array.isArray(parsed.insertedIds) ? parsed.insertedIds : [];
-  const backups = Array.isArray(parsed.backup) ? parsed.backup : [];
-
-  // 先还原被更新的记录
-  // ⚠️ 必须把 NULL 原样传回去，不能转成空字符串 ——
-  //    空字符串会撞上「邮箱格式 / 非空长度」这些 CHECK 约束
-  for (const b of backups) {
-    if (!b?.id) continue;
-    await updateProfile(Number(b.id), {
-      companyName: String(b.companyName ?? ""),
-      contactName: String(b.contactName ?? ""),
-      position: b.position ?? null,
-      phone: String(b.phone ?? ""),
-      email: b.email ?? null,
-      industry: b.industry ?? null,
-      source: String(b.source ?? SOURCES[0]),
-      address: b.address ?? null,
-      remark: b.remark ?? null,
-    });
-  }
-
-  // 再删除新建的记录
-  const removed = await deleteProfilesByIds(ids.map(Number).filter(Number.isInteger));
-
-  res.render("profileImport", {
-    maxRows: MAX_ROWS, sources: SOURCES, templateHeaders: TEMPLATE_HEADERS,
-    error: null,
-    report: {
-      total: backups.length + removed,
-      insertedCount: 0, updatedCount: 0, failed: [],
-      rollbackToken: null,
-      rolledBack: { removed, restored: backups.length },
-    },
-  });
+  const result = await rollbackBatch(batchId);
+  return renderImportError(res, null, 200, null, result);
 }
+
 
 /* ────────────────────────── 建档 ────────────────────────── */
 
@@ -460,8 +421,24 @@ export async function create(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const created = await createProfile(toRow(values));
-  res.redirect(`/profiles/${created.id}`);
+  try {
+    const created = await createProfile(toRow(values));
+    res.redirect(`/profiles/${created.id}`);
+  } catch (err: any) {
+    // 手机号 UNIQUE 冲突（23505）→ 回填表单并给出可读提示，而不是 500
+    if (isUniqueViolation(err)) {
+      res.status(409).render("profileForm", {
+        ...formData(),
+        title: "新建客户档案",
+        action: "/profiles",
+        submitText: "保存档案",
+        error: `手机号 ${values.phone} 已存在，请直接编辑那条档案，或换一个手机号`,
+        values,
+      });
+      return;
+    }
+    throw err;
+  }
 }
 
 /* ────────────────────────── 档案详情 ────────────────────────── */
@@ -527,12 +504,28 @@ export async function update(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const updated = await updateProfile(id, toRow(values));
-  if (!updated) {
-    res.status(404).render("customerNotFound", { id: req.params.id });
-    return;
+  try {
+    const updated = await updateProfile(id, toRow(values));
+    if (!updated) {
+      res.status(404).render("customerNotFound", { id: req.params.id });
+      return;
+    }
+    res.redirect(`/profiles/${id}`);
+  } catch (err: any) {
+    // 手机号被别的档案占用（23505）
+    if (isUniqueViolation(err)) {
+      res.status(409).render("profileForm", {
+        ...formData(),
+        title: `编辑档案 #${id}`,
+        action: `/profiles/${id}`,
+        submitText: "保存修改",
+        error: `手机号 ${values.phone} 已被另一条档案占用`,
+        values: { ...existing, ...values, id },
+      });
+      return;
+    }
+    throw err;
   }
-  res.redirect(`/profiles/${id}`);
 }
 
 /* ────────────────────────── 删除 ────────────────────────── */

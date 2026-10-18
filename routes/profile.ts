@@ -34,10 +34,10 @@ const upload = multer({
    /profiles/import       会被 /profiles/:id 抢先匹配
    /profiles/template.csv 会被 /profiles/:id 抢先匹配 */
 
-/* 导入相关 */
+/* 导入相关（⚠️ /profiles/import/:batchId/rollback 必须排在 /profiles/:id 之前） */
 router.get("/profiles/template.csv", downloadTemplate);
 router.get("/profiles/import", importPage);
-router.post("/profiles/import/rollback", rollbackImport);
+router.post("/profiles/import/:batchId/rollback", rollbackImport);
 router.post("/profiles/import", upload.single("file"), importCsv);
 
 /* 导出 */

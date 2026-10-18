@@ -2,8 +2,11 @@ import {
   pgTable,
   serial,
   text,
+  integer,
   timestamp,
   check,
+  index,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -64,15 +67,16 @@ export const customerProfiles = pgTable(
   "customer_profiles",
   {
     id: serial("id").primaryKey(),
-    companyName: text("company_name").notNull(),      // 公司/客户名称
-    contactName: text("contact_name").notNull(),      // 联系人
-    position: text("position"),                       // 职位（可空）
-    phone: text("phone").notNull(),                   // 手机
-    email: text("email"),                             // 邮箱（可空）
-    industry: text("industry"),                       // 所属行业（可空）
-    source: text("source").notNull().default("其他"), // 来源渠道
-    address: text("address"),                         // 通讯地址（可空）
-    remark: text("remark"),                           // 备注（可空）
+    companyName: text("company_name").notNull(),
+    contactName: text("contact_name").notNull(),
+    position: text("position"),
+    // ⚠️ UNIQUE：手机号是客户的唯一标识，导入时的 upsert 也依赖它
+    phone: text("phone").notNull().unique(),
+    email: text("email"),
+    industry: text("industry"),
+    source: text("source").notNull().default("其他"),
+    address: text("address"),
+    remark: text("remark"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
@@ -92,3 +96,50 @@ export const customerProfiles = pgTable(
 export type CustomerProfile = typeof customerProfiles.$inferSelect;
 /** 新建客户档案时能传的对象 */
 export type NewCustomerProfile = typeof customerProfiles.$inferInsert;
+
+/* ═══════════════ 导入批次（支持事后回滚） ═══════════════ */
+
+/** 一次 CSV 导入 = 一个批次 */
+export const importBatches = pgTable(
+  "import_batches",
+  {
+    id: serial("id").primaryKey(),
+    fileName: text("file_name").notNull(),
+    totalRows: integer("total_rows").notNull(),
+    insertedCount: integer("inserted_count").notNull().default(0),
+    updatedCount: integer("updated_count").notNull().default(0),
+    failedCount: integer("failed_count").notNull().default(0),
+    /** committed = 已生效；rolled_back = 已撤销 */
+    status: text("status").notNull().default("committed"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    rolledBackAt: timestamp("rolled_back_at"),
+  },
+  (t) => [
+    check("batches_status_valid", sql`${t.status} = ANY (ARRAY['committed','rolled_back'])`),
+  ],
+);
+
+/** 批次内的每条变更 —— 回滚时靠它精确还原 */
+export const importBatchItems = pgTable(
+  "import_batch_items",
+  {
+    id: serial("id").primaryKey(),
+    batchId: integer("batch_id")
+      .notNull()
+      .references(() => importBatches.id, { onDelete: "cascade" }),
+    /** 涉及的档案 id */
+    profileId: integer("profile_id").notNull(),
+    /** inserted = 本次新增；updated = 本次覆盖了旧值 */
+    action: text("action").notNull(),
+    /** 更新前的整行快照（仅 action='updated' 时有值） */
+    beforeData: jsonb("before_data"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    check("batch_items_action_valid", sql`${t.action} = ANY (ARRAY['inserted','updated'])`),
+    index("batch_items_batch_idx").on(t.batchId),
+  ],
+);
+
+export type ImportBatch = typeof importBatches.$inferSelect;
+export type ImportBatchItem = typeof importBatchItems.$inferSelect;

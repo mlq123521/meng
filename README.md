@@ -63,7 +63,11 @@ bun run dev   # 热重载
 | `bun run db:generate` | 生成迁移 SQL 文件 |
 | `bun run db:migrate` | 执行迁移 |
 | `bun run db:studio` | 启动网页版数据库客户端 |
-| `bun run test:smoke` | 跑冒烟 + 边界测试（需服务已启动） |
+| `bun run test:all` | 跑全部测试（需服务已启动） |
+| `bun run test:smoke` | 通用功能冒烟 + 边界 + 安全（136 项） |
+| `bun run test:import` | 导入功能专项（43 项） |
+| `bun run test:atomic` | 事务原子性（18 项） |
+| `bun run test:batch` | 批次回滚 + 性能（20 项） |
 
 ---
 
@@ -88,8 +92,24 @@ bun run dev   # 热重载
 | 筛选 | 按来源渠道、所属行业 |
 | 分页 | 每页 10 条 |
 | 导出 | CSV 全量导出 |
+| **导入** | CSV 批量导入，按手机号 upsert |
 
-> ⚠️ 客户档案与需求登记目前是**两张独立的数据表**，尚未建立外键关联。
+### 批量导入 `/profiles/import`
+
+| 能力 | 说明 |
+|------|------|
+| 模板下载 | `/profiles/template.csv`，含表头与示例行 |
+| 按手机号 upsert | 手机号已存在 → 更新；不存在 → 新增 |
+| 整批一条 SQL | `INSERT ... ON CONFLICT (phone) DO UPDATE`，500 行实测约 250ms |
+| 错误行报告 | 出错的行跳过，列出行号 + 原因，不影响其他行 |
+| 行数上限 | 单次 500 行，超限直接拒绝且不写入任何数据 |
+| 事务原子性 | 中途失败整批回滚，不会留下「导了一半」的数据 |
+| **按批次回滚** | 每次导入生成批次号，事后随时撤销：删新增、还原覆盖 |
+| 表头容错 | 「公司名」「客户名称」「company」等写法都能识别 |
+
+回滚入口保留在导入页的**导入历史**里，关掉结果页也能撤销。已撤销的批次会标记为 `rolled_back`，不可重复撤销。
+
+> 客户档案与需求登记目前是**两张独立的数据表**，尚未建立外键关联。
 
 ---
 
@@ -179,13 +199,24 @@ HTTP 响应
 |------|
 | `company_name` 1–60 字 |
 | `contact_name` 1–30 字 |
-| `phone` 匹配 `^1[3-9][0-9]{9}$` |
+| `phone` 匹配 `^1[3-9][0-9]{9}$` 且 **UNIQUE** |
 | `email` 匹配邮箱格式（可空） |
 | `position` ≤ 30 字（可空） |
 | `industry` ≤ 30 字（可空） |
 | `address` ≤ 200 字（可空） |
 | `remark` ≤ 500 字（可空） |
 | `source` ∈ {官网咨询, 电话咨询, 转介绍, 展会, 广告投放, 其他} |
+
+### `import_batches` / `import_batch_items`（导入批次）
+
+| 表 | 用途 |
+|----|------|
+| `import_batches` | 记录每次导入：文件名、行数、新增/更新/失败数、状态、时间 |
+| `import_batch_items` | 每条变更的明细：`profileId`、动作（inserted/updated）、更新前的完整快照（jsonb） |
+
+`phone` 上的 UNIQUE 约束有两个作用：
+1. 业务上保证「一个手机号只对应一个客户」，手工建档重复时返回 409
+2. 技术上作为 `ON CONFLICT (phone)` 的冲突目标，让整批导入只用一条 SQL
 
 ---
 

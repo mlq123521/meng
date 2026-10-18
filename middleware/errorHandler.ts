@@ -1,3 +1,5 @@
+import { pgErrorCode, isUniqueViolation, isCheckViolation } from "../utils/pgError";
+
 /**
  * 全局错误处理
  * 放在所有路由之后注册
@@ -28,16 +30,22 @@ export function errorHandler(err: any, req: any, res: any, next: any) {
     return next(err);
   }
 
-  const status = Number(err?.status ?? err?.statusCode) || 500;
+  let status = Number(err?.status ?? err?.statusCode) || 500;
 
-  // 数据库约束冲突 → 409
-  if (err?.code === "23505") {
-    res.status(409).render("error", { status: 409, title: "数据冲突", message: "记录已存在", stack: null });
+  // 唯一约束冲突 → 409（Drizzle 会包装错误，code 要从 cause 链里挖）
+  if (isUniqueViolation(err)) {
+    res.status(409).render("error", {
+      status: 409, title: "数据冲突",
+      message: "该记录已存在（可能是唯一字段重复）", stack: null,
+    });
     return;
   }
   // CHECK 约束冲突 → 400
-  if (err?.code === "23514") {
-    res.status(400).render("error", { status: 400, title: "数据不合法", message: "字段不符合数据库约束", stack: null });
+  if (isCheckViolation(err)) {
+    res.status(400).render("error", {
+      status: 400, title: "数据不合法",
+      message: "字段不符合数据库约束", stack: null,
+    });
     return;
   }
 

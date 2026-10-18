@@ -11,6 +11,8 @@
     "test:smoke": "bun run test/smoke.ts",
     "test:import": "bun run test/import.test.ts",
     "test:atomic": "bun run test/atomic.test.ts",
+    "test:batch": "bun run test/batch.test.ts",
+    "test:all": "bun run test/smoke.ts && bun run test/import.test.ts && bun run test/atomic.test.ts && bun run test/batch.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",

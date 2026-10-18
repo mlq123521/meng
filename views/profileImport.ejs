@@ -43,6 +43,14 @@
       .cols { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
       .cols span { background: #f3f4f6; padding: 3px 9px; border-radius: 4px; font-size: 12px; color: #374151; }
       .req-star { color: #dc2626; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+      th { background: #fafafa; color: #6b7280; font-weight: 500; }
+      .tag { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; white-space: nowrap; }
+      .tag.green { background: #f0fdf4; color: #15803d; }
+      .tag.gray { background: #f3f4f6; color: #9ca3af; }
+      .btn-link { background: none; border: none; color: #2563eb; cursor: pointer; font-size: 13px; padding: 2px 6px; }
+      .btn-link.danger { color: #dc2626; }
     </style>
   </head>
   <body>
@@ -50,10 +58,15 @@
 
     <div class="wrap">
       <% if (error) { %><div class="alert alert-err"><%= error %></div><% } %>
-
-      <% if (report && report.rolledBack) { %>
-        <div class="alert alert-ok">
-          已撤销：删除新建记录 <%= report.rolledBack.removed %> 条，还原被更新记录 <%= report.rolledBack.restored %> 条。
+      <% if (notice) { %><div class="alert alert-ok"><%= notice %></div><% } %>
+      <% if (report && report.failed && report.failed.length > 0) { %>
+        <div class="alert alert-err">
+          没有任何一行通过校验，失败 <%= report.failed.length %> 行：
+          <ul style="margin:8px 0 0 18px;">
+            <% report.failed.forEach(function (f) { %>
+              <li>第 <%= f.line %> 行 —— <%= f.reason %></li>
+            <% }) %>
+          </ul>
         </div>
       <% } %>
 
@@ -101,6 +114,53 @@
       <p class="muted" style="text-align:center;">
         来源渠道可选值：<%= sources.join(" / ") %>
       </p>
+    </div>
+
+    <!-- 导入历史：关掉页面也能随时撤销 -->
+    <div class="card">
+      <h2>导入历史</h2>
+      <% if (!batches || batches.length === 0) { %>
+        <p class="muted" style="text-align:center;padding:20px 0;">还没有导入记录</p>
+      <% } else { %>
+        <table>
+          <thead>
+            <tr>
+              <th>批次</th><th>文件名</th><th>总行</th><th>新增</th><th>更新</th><th>失败</th>
+              <th>导入时间</th><th>状态</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% batches.forEach(function (b) { %>
+              <tr>
+                <td>#<%= b.id %></td>
+                <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;"><%= b.fileName %></td>
+                <td><%= b.totalRows %></td>
+                <td><%= b.insertedCount %></td>
+                <td><%= b.updatedCount %></td>
+                <td><%= b.failedCount %></td>
+                <td class="muted"><%= b.createdAt.toISOString().slice(0, 16).replace("T", " ") %></td>
+                <td>
+                  <% if (b.status === "rolled_back") { %>
+                    <span class="tag gray">已撤销</span>
+                  <% } else { %>
+                    <span class="tag green">已生效</span>
+                  <% } %>
+                </td>
+                <td>
+                  <% if (b.status === "committed") { %>
+                    <form method="post" action="/profiles/import/<%= b.id %>/rollback"
+                          onsubmit="return confirm('撤销批次 #<%= b.id %>？\n将删除该批次新增的记录，并还原被覆盖的记录。')">
+                      <button type="submit" class="btn-link danger">撤销</button>
+                    </form>
+                  <% } else { %>
+                    <span class="muted">—</span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      <% } %>
     </div>
   </body>
 </html>

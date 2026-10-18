@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 自动化冒烟 + 边界测试
  * 运行：bun run test/smoke.ts
  * 依赖：服务已在 3000 端口运行
@@ -510,11 +510,13 @@ section("18. 筛选与分页一致性");
 {
   // 建 3 条不同状态
   const ids: number[] = [];
+  // ⚠️ phone 有 UNIQUE 约束，每条必须用不同手机号
+  let phoneSeq = 1;
   for (const st of ["待跟进", "沟通中", "已报价"]) {
     const r = await post("/profiles", {
       companyName: `${MARK}筛选${st}`,
       contactName: "筛选",
-      phone: "13800022222",
+      phone: `138000${String(20000 + phoneSeq++).padStart(5, "0")}`,
       source: "其他",
     });
     if (r.status === 302) ids.push(Number(r.headers.get("location")!.split("/").pop()));
@@ -579,7 +581,7 @@ section("20. 档案 CSV 导出");
     const r = await post("/profiles", {
       companyName: `${MARK}导出${i},带逗号`,
       contactName: `导出人${i}`,
-      phone: "13800033333",
+      phone: `138000${String(30000 + i).padStart(5, "0")}`, // UNIQUE：每条不同
       industry: "导出行业",
       source: "展会",
       remark: `备注${i}，含逗号和"引号"`,

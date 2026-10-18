@@ -129,6 +129,7 @@ console.log("\n── 4. 触发器移除后，导入恢复正常 ─────
 console.log("\n── 5. 一键回滚：删除新增 + 还原更新 ─────────");
 {
   await cleanupMarked();
+  await db`DELETE FROM customer_profiles`; // 清掉上一轮残留（phone 有 UNIQUE）
   // 造一条已有记录
   await db.unsafe(
     `INSERT INTO customer_profiles (company_name,contact_name,phone,source)
@@ -141,22 +142,19 @@ console.log("\n── 5. 一键回滚：删除新增 + 还原更新 ────
     `${MARK}全新公司,新人,13844000002`,
   ].join("\n");
   const r = await upload(csv);
-
-  const tok = r.body.match(/name="token" value="([^"]*)"/);
-  ok("拿到回滚 token", !!tok);
-  const token = tok![1]
-    .replace(/&#34;/g, '"').replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  const m = r.body.match(/批次编号 #(\d+)/);
+  ok("结果页带批次编号", !!m, "未找到批次编号");
+  const batchId = Number(m![1]);
 
   const after = await countMarked();
   ok("导入后共 2 条", after === 2, `实际 ${after}`);
 
-  const rb = await fetch(`${BASE}/profiles/import/rollback`, {
+  const rb = await fetch(`${BASE}/profiles/import/${batchId}/rollback`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ token }).toString(),
+    body: "",
   });
-  ok("回滚返回 200", rb.status === 200, `得到 ${rb.status}`);
+  ok("回滚返回 200", rb.status === 200, "得到 " + rb.status);
 
   const left = await countMarked();
   ok("仅剩 1 条原始记录", left === 1, `实际 ${left}`);

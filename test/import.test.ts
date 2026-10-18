@@ -61,7 +61,7 @@ let createdIds: number[] = [];
   ok("更新 0 条", stat(r.body, "更新") === 0);
   ok("失败 0 条", stat(r.body, "失败") === 0);
   ok("总行数 3", stat(r.body, "总行数") === 3);
-  ok("含回滚按钮", r.body.includes("/profiles/import/rollback"));
+  ok("含回滚按钮", /action="\/profiles\/import\/\d+\/rollback"/.test(r.body), "未找到回滚按钮");
 }
 
 console.log("\n── 3. 按手机号更新 ─────────────────────────");
@@ -178,20 +178,16 @@ console.log("\n── 10. 一键回滚 ─────────────�
     `${MARK}回滚新增,新增人,13811160002`,
   ].join("\n");
   const r = await upload("rb.csv", csv);
-  const m = r.body.match(/name="token" value="([^"]*)"/);
-  ok("结果页带 token", !!m, "未找到 token");
+  const m = r.body.match(/批次编号 #(\d+)/);
+  ok("结果页显示批次编号", !!m, "未找到批次编号");
+  const batchId = Number(m![1]);
+  ok("批次编号是有效数字", Number.isInteger(batchId) && batchId > 0, `实际 ${m![1]}`);
 
-  const token = decodeEntities(m![1]);
-  ok("token 是合法 JSON", (() => { try { JSON.parse(token); return true; } catch { return false; } })());
-
-  const parsed = JSON.parse(token);
-  ok("token 记录了新增 id", Array.isArray(parsed.insertedIds) && parsed.insertedIds.length === 1, JSON.stringify(parsed.insertedIds));
-  ok("token 存的是【更新前】的值", parsed.backup?.[0]?.contactName === "原联系人", `实际 ${parsed.backup?.[0]?.contactName}`);
-
-  const res = await fetch(`${BASE}/profiles/import/rollback`, {
+  // 关键：关掉结果页、直接用批次 id 回滚（不需要 token）
+  const res = await fetch(`${BASE}/profiles/import/${batchId}/rollback`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ token }).toString(),
+    body: "",
   });
   const rbBody = await res.text();
   ok("回滚 200", res.status === 200, `得到 ${res.status}`);
@@ -202,6 +198,22 @@ console.log("\n── 10. 一键回滚 ─────────────�
   ok("改名已还原", back.includes("原联系人") && !back.includes("改名"), "未还原");
   const added = await (await fetch(`${BASE}/profiles?keyword=${encodeURIComponent(MARK + "回滚新增")}`)).text();
   ok("新增记录已删除", !added.includes("/edit"), "新增记录仍在");
+
+  // 幂等：重复撤销同一个批次
+  const again = await fetch(`${BASE}/profiles/import/${batchId}/rollback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "",
+  });
+  const againBody = await again.text();
+  ok("重复撤销被拒绝", againBody.includes("已经撤销"), againBody.slice(0, 200));
+}
+
+console.log("\n── 10b. 导入历史页面 ────────────────────────");
+{
+  const page = await (await fetch(`${BASE}/profiles/import`)).text();
+  ok("导入页展示历史批次", page.includes("导入历史"), "缺少历史区块");
+  ok("历史含状态列", page.includes("已生效") || page.includes("已撤销"), "缺少状态");
 }
 
 console.log("\n── 11. 清理 ────────────────────────────────");

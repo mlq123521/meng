@@ -1,7 +1,10 @@
 import { and, or, desc, count, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { getTableColumns } from "drizzle-orm";
 import { db } from "../db";
 import {
   customerProfiles,
+  importBatches,
+  importBatchItems,
   SOURCES,
   type CustomerProfile,
 } from "../db/schema";
@@ -193,44 +196,57 @@ async function findByPhones(phones: string[]): Promise<Map<string, CustomerProfi
 /**
  * 按手机号判断：存在则更新，不存在则新增
  *
- * 整个过程包在一个事务里：
- * 中途任何一条失败，整批回滚，不会留下「导了一半」的数据。
- * 返回 backup（更新前的原始记录）供一键回滚使用。
+ * 整批只发【一条】SQL：
+ *   INSERT INTO customer_profiles (...) VALUES (...), (...), (...)
+ *   ON CONFLICT (phone) DO UPDATE SET ...
+ * 依赖 phone 上的 UNIQUE 约束，性能远好于逐行 INSERT/UPDATE。
+ *
+ * 整个过程包在事务里：中途失败整批回滚。
  */
 export async function importProfiles(rows: ProfileRow[]): Promise<ImportOutcome> {
   if (rows.length === 0) return { inserted: [], updated: [], backup: [] };
 
   return db.transaction(async (tx) => {
     const phones = rows.map((r) => r.phone);
+
+    // ① 先查出已存在的记录，作为回滚用的「更新前快照」
     const existingRows = await tx
       .select()
       .from(customerProfiles)
       .where(inArray(customerProfiles.phone, phones));
     const existing = new Map(existingRows.map((r) => [r.phone, r]));
 
-    const toInsert = rows.filter((r) => !existing.has(r.phone));
-    const toUpdate = rows.filter((r) => existing.has(r.phone));
+    // ② 一条 UPSERT 完成全部新增与更新
+    const result = await tx
+      .insert(customerProfiles)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: customerProfiles.phone,
+        set: {
+          companyName: sql`excluded.company_name`,
+          contactName: sql`excluded.contact_name`,
+          position: sql`excluded.position`,
+          email: sql`excluded.email`,
+          industry: sql`excluded.industry`,
+          source: sql`excluded.source`,
+          address: sql`excluded.address`,
+          remark: sql`excluded.remark`,
+        },
+      })
+      .returning({
+        ...getTableColumns(customerProfiles),
+        // PostgreSQL 小技巧：xmax = 0 说明这行是本次 INSERT 的（而非 UPDATE 的）
+        isInserted: sql<boolean>`(xmax = 0)`,
+      });
 
-    let inserted: CustomerProfile[] = [];
-    if (toInsert.length) {
-      inserted = await tx.insert(customerProfiles).values(toInsert).returning();
-    }
+    const inserted = result.filter((r) => r.isInserted);
+    const updated = result.filter((r) => !r.isInserted);
 
-    let updated: CustomerProfile[] = [];
-    for (const row of toUpdate) {
-      const old = existing.get(row.phone)!;
-      const [u] = await tx
-        .update(customerProfiles)
-        .set(row)
-        .where(eq(customerProfiles.id, old.id))
-        .returning();
-      if (u) updated.push(u);
-    }
-
-    // ⚠️ 必须留存【更新前】的值 —— existingRows 是更新前的快照
-    const backup = toUpdate.map((r) => existing.get(r.phone)!).filter(Boolean);
-
-    return { inserted, updated, backup };
+    return {
+      inserted,
+      updated,
+      backup: existingRows, // 更新前的原始行
+    };
   });
 }
 
@@ -244,8 +260,142 @@ export async function deleteProfilesByIds(ids: number[]): Promise<number> {
   return rows.length;
 }
 
-/** 查询指定 id 列表（回滚前先记录原始值） */
+/** 查询指定 id 列表 */
 export async function getProfilesByIds(ids: number[]): Promise<CustomerProfile[]> {
   if (ids.length === 0) return [];
   return db.select().from(customerProfiles).where(inArray(customerProfiles.id, ids));
+}
+
+/* ════════════════ 导入批次 ════════════════ */
+
+/** 记录一次导入（含每条变更的明细），返回批次 id */
+export async function recordBatch(params: {
+  fileName: string;
+  totalRows: number;
+  failedCount: number;
+  inserted: CustomerProfile[];
+  backup: CustomerProfile[];
+}): Promise<number> {
+  return db.transaction(async (tx) => {
+    const [batch] = await tx
+      .insert(importBatches)
+      .values({
+        fileName: params.fileName,
+        totalRows: params.totalRows,
+        insertedCount: params.inserted.length,
+        updatedCount: params.backup.length,
+        failedCount: params.failedCount,
+        status: "committed",
+      })
+      .returning({ id: importBatches.id });
+
+    const items = [
+      ...params.inserted.map((p) => ({
+        batchId: batch.id,
+        profileId: p.id,
+        action: "inserted" as const,
+        beforeData: null,
+      })),
+      ...params.backup.map((p) => ({
+        batchId: batch.id,
+        profileId: p.id,
+        action: "updated" as const,
+        // 存更新前的整行，回滚时原样写回
+        beforeData: {
+          companyName: p.companyName,
+          contactName: p.contactName,
+          position: p.position,
+          phone: p.phone,
+          email: p.email,
+          industry: p.industry,
+          source: p.source,
+          address: p.address,
+          remark: p.remark,
+        },
+      })),
+    ];
+
+    if (items.length) await tx.insert(importBatchItems).values(items);
+    return batch.id;
+  });
+}
+
+/** 最近的导入批次列表 */
+export async function listBatches(limit = 20) {
+  return db
+    .select()
+    .from(importBatches)
+    .orderBy(desc(importBatches.id))
+    .limit(limit);
+}
+
+/**
+ * 撤销一个批次
+ * - action=inserted → 删除对应档案
+ * - action=updated  → 用 beforeData 原样还原
+ * 幂等：已撤销过的批次直接返回
+ */
+export async function rollbackBatch(batchId: number): Promise<{
+  ok: boolean;
+  removed: number;
+  restored: number;
+  message: string;
+}> {
+  return db.transaction(async (tx) => {
+    const [batch] = await tx
+      .select()
+      .from(importBatches)
+      .where(eq(importBatches.id, batchId))
+      .limit(1);
+
+    if (!batch) return { ok: false, removed: 0, restored: 0, message: "批次不存在" };
+    if (batch.status === "rolled_back") {
+      return { ok: false, removed: 0, restored: 0, message: "该批次已经撤销过了" };
+    }
+
+    const items = await tx
+      .select()
+      .from(importBatchItems)
+      .where(eq(importBatchItems.batchId, batchId));
+
+    // ① 删除本次新增的
+    const insertedIds = items.filter((i) => i.action === "inserted").map((i) => i.profileId);
+    let removed = 0;
+    if (insertedIds.length) {
+      const deleted = await tx
+        .delete(customerProfiles)
+        .where(inArray(customerProfiles.id, insertedIds))
+        .returning({ id: customerProfiles.id });
+      removed = deleted.length;
+    }
+
+    // ② 还原被覆盖的
+    let restored = 0;
+    for (const item of items) {
+      if (item.action !== "updated" || !item.beforeData) continue;
+      const b = item.beforeData as Record<string, string | null>;
+      const [done] = await tx
+        .update(customerProfiles)
+        .set({
+          companyName: String(b.companyName ?? ""),
+          contactName: String(b.contactName ?? ""),
+          position: b.position ?? null,
+          email: b.email ?? null,
+          industry: b.industry ?? null,
+          source: String(b.source ?? "其他"),
+          address: b.address ?? null,
+          remark: b.remark ?? null,
+        })
+        .where(eq(customerProfiles.id, item.profileId))
+        .returning({ id: customerProfiles.id });
+      if (done) restored++;
+    }
+
+    await tx
+      .update(importBatches)
+      .set({ status: "rolled_back", rolledBackAt: new Date() })
+      .where(eq(importBatches.id, batchId));
+
+    return { ok: true, removed, restored, message: "已撤销" };
+  });
 }
