@@ -4,48 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>客户档案详情</title>
-    <style>
-      * { box-sizing: border-box; }
-      body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f5f6f8; margin: 0; color: #1f2937; }
-      .bar { background: #1f2937; color: #fff; padding: 0 24px; display: flex; align-items: center; gap: 28px; height: 54px; }
-      .brand { color: #fff; text-decoration: none; font-weight: 600; font-size: 16px; }
-      .nav { display: flex; gap: 4px; flex: 1; }
-      .nav-link { color: #cbd5e1; text-decoration: none; padding: 6px 12px; border-radius: 6px; font-size: 14px; }
-      .nav-link.on { color: #fff; background: #2563eb; }
-      .wrap { max-width: 700px; margin: 0 auto; padding: 24px 20px; }
-      .card { background: #fff; border-radius: 10px; padding: 28px 32px; box-shadow: 0 1px 6px rgba(0,0,0,.06); }
-      .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 22px; }
-      .head h2 { margin: 0; font-size: 22px; }
-      .no { color: #9ca3af; font-size: 13px; margin-top: 4px; }
-      .tag { display: inline-block; padding: 3px 12px; border-radius: 20px; font-size: 12px; background: #eef2ff; color: #4338ca; white-space: nowrap; }
-      dl { display: grid; grid-template-columns: 92px 1fr; gap: 14px 0; margin: 0; font-size: 14px; }
-      dt { color: #6b7280; }
-      dd { margin: 0; color: #111827; word-break: break-word; }
-      .pre { white-space: pre-wrap; line-height: 1.7; }
-      .sep { border: none; border-top: 1px solid #f0f0f0; margin: 22px 0; }
-      .actions { display: flex; gap: 10px; align-items: center; }
-      .btn { padding: 9px 18px; border-radius: 6px; text-decoration: none; font-size: 14px; border: none; cursor: pointer; display: inline-block; }
-      .btn-primary { background: #2563eb; color: #fff; }
-      .btn-ghost { background: #f3f4f6; color: #374151; }
-      .btn-danger { background: #dc2626; color: #fff; }
-      .btn:hover { opacity: .9; }
-      .note { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 12px 14px; border-radius: 8px; font-size: 13px; margin-top: 24px; line-height: 1.6; }
-      h2 { margin: 0 0 16px; font-size: 16px; }
-      table { width: 100%; border-collapse: collapse; font-size: 13px; }
-      th, td { padding: 9px 10px; text-align: left; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
-      th { background: #fafafa; color: #6b7280; font-weight: 500; }
-      tr:last-child td { border-bottom: none; }
-      .tag { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; background: #eef2ff; color: #4338ca; white-space: nowrap; }
-      .muted { color: #9ca3af; font-size: 13px; }
-      .btn-link { background: none; border: none; color: #2563eb; cursor: pointer; font-size: 13px; padding: 2px 6px; text-decoration: none; }
-      .btn-link.danger { color: #dc2626; }
-      .btn-link:hover { text-decoration: underline; }
-    </style>
+    <link rel="stylesheet" href="/partials/table.css" />
   </head>
   <body>
     <%- include("partials/nav", { active: "profile" }) %>
 
-    <div class="wrap">
+    <div class="wrap wrap-narrow">
       <div class="card">
         <div class="head">
           <div>
@@ -57,16 +21,16 @@
 
         <hr class="sep" />
 
-        <dl>
+        <dl class="detail">
           <dt>公司名称</dt><dd><%= profile.companyName %></dd>
           <dt>联系人</dt><dd><%= profile.contactName %></dd>
-          <dt>职位</dt><dd><% if (profile.position) { %><%= profile.position %><% } else { %><span class="no">—</span><% } %></dd>
+          <dt>职位</dt><dd><% if (profile.position) { %><%= profile.position %><% } else { %><span class="muted">—</span><% } %></dd>
           <dt>手机</dt><dd><%= profile.phone %></dd>
-          <dt>邮箱</dt><dd><% if (profile.email) { %><%= profile.email %><% } else { %><span class="no">—</span><% } %></dd>
-          <dt>行业</dt><dd><% if (profile.industry) { %><%= profile.industry %><% } else { %><span class="no">—</span><% } %></dd>
+          <dt>邮箱</dt><dd><% if (profile.email) { %><%= profile.email %><% } else { %><span class="muted">—</span><% } %></dd>
+          <dt>行业</dt><dd><% if (profile.industry) { %><%= profile.industry %><% } else { %><span class="muted">—</span><% } %></dd>
           <dt>来源渠道</dt><dd><%= profile.source %></dd>
-          <dt>通讯地址</dt><dd><% if (profile.address) { %><%= profile.address %><% } else { %><span class="no">—</span><% } %></dd>
-          <dt>备注</dt><dd class="pre"><% if (profile.remark) { %><%= profile.remark %><% } else { %><span class="no">—</span><% } %></dd>
+          <dt>通讯地址</dt><dd><% if (profile.address) { %><%= profile.address %><% } else { %><span class="muted">—</span><% } %></dd>
+          <dt>备注</dt><dd class="pre"><% if (profile.remark) { %><%= profile.remark %><% } else { %><span class="muted">—</span><% } %></dd>
           <dt>建档时间</dt><dd><%= profile.createdAt.toISOString().slice(0, 19).replace("T", " ") %></dd>
         </dl>
 
@@ -95,17 +59,18 @@
             <a href="/new?profileId=<%= profile.id %>" style="color:#2563eb;text-decoration:none;">点右上角「+ 登记需求」</a>
           </p>
         <% } else { %>
+          <div class="table-scroll">
           <table>
             <thead>
-              <tr><th>ID</th><th>需求描述</th><th>状态</th><th>登记时间</th><th>操作</th></tr>
+              <tr><th class="col-num" style="width: 56px;">ID</th><th>需求描述</th><th style="width: 92px;">状态</th><th class="col-opt" style="width: 132px;">登记时间</th><th class="actions-cell" style="width: 120px;">操作</th></tr>
             </thead>
             <tbody>
               <% demands.forEach(function (d) { %>
                 <tr>
-                  <td><%= d.id %></td>
-                  <td><a href="/demands/<%= d.id %>" style="color:#2563eb;text-decoration:none;"><%= d.demand %></a></td>
+                  <td class="col-num muted"><%= d.id %></td>
+                  <td class="cell-clip"><a href="/demands/<%= d.id %>" style="color:#2563eb;text-decoration:none;"><%= d.demand %></a></td>
                   <td><span class="tag"><%= d.status %></span></td>
-                  <td class="muted"><%= d.createdAt.toISOString().slice(0, 16).replace("T", " ") %></td>
+                  <td class="col-mono muted col-opt"><%= d.createdAt.toISOString().slice(0, 16).replace("T", " ") %></td>
                   <td>
                     <a class="btn-link" href="/demands/<%= d.id %>/edit">编辑</a>
                     <form method="post" action="/demands/<%= d.id %>/delete" style="display:inline;">
@@ -116,7 +81,8 @@
                 </tr>
               <% }) %>
             </tbody>
-          </table>
+                    </table>
+        </div>
         <% } %>
       </div>
     </div>

@@ -1,0 +1,195 @@
+/*
+ * 共享样式表 —— 由 demandList / profileList / demandDetail / profileDetail 引入
+ *
+ * 为什么抽出来：这四个页面原本各自内联一份 <style>，改一次列宽要改四个文件，
+ * 很容易漏。列表页和详情页共用一套表头/单元格规则，视觉才一致。
+ *
+ * 排版约定
+ * - 数字类列（ID、手机、时间）用 tabular-nums + 定宽，避免每行宽度跳来跳去
+ * - 长文本列（需求描述、备注）固定宽度 + 单行省略，鼠标悬停看全文
+ * - 次要列（邮箱、职位、地址）在窄屏用 .col-opt 隐藏，优先保住关键列
+ * - 窄屏不压缩表格，改为横向滚动 —— 压缩会把中文挤成竖排，反而更乱
+ */
+
+/* ────────────────────────── 基础 ────────────────────────── */
+* { box-sizing: border-box; }
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: #f5f6f8;
+  margin: 0;
+  color: #1f2937;
+}
+
+/* 列表页宽，详情页用 .wrap-narrow */
+.wrap { max-width: 1440px; margin: 0 auto; padding: 24px 20px; }
+.wrap-narrow { max-width: 960px; }
+
+.card {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .06);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+/* ────────────────────────── 顶栏 ────────────────────────── */
+.bar {
+  background: #1f2937;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  height: 54px;
+  padding: 0 24px;
+}
+.bar h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.brand { color: #fff; text-decoration: none; font-weight: 600; font-size: 16px; }
+.nav { display: flex; gap: 4px; flex: 1; }
+.nav-link { color: #cbd5e1; text-decoration: none; padding: 6px 12px; border-radius: 6px; font-size: 14px; }
+.nav-link.on { color: #fff; background: #2563eb; }
+.actions-slot { display: flex; gap: 10px; }
+.bar .btn { padding: 6px 12px; font-size: 13px; }
+.bar .btn-ghost { background: #374151; color: #fff; }
+
+/* ────────────────────────── 按钮 ────────────────────────── */
+.btn {
+  display: inline-block;
+  padding: 8px 14px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.btn-primary { background: #2563eb; color: #fff; }
+.btn-ghost { background: #f3f4f6; color: #374151; }
+.btn-danger { background: #dc2626; color: #fff; }
+.btn-sm { padding: 4px 10px; font-size: 13px; }
+.btn:hover { opacity: .9; }
+
+.btn-link { background: none; color: #2563eb; padding: 2px 6px; font-size: 13px; cursor: pointer; }
+.btn-link.danger { color: #dc2626; }
+.btn-link:hover { text-decoration: underline; }
+
+/* ────────────────────────── 筛选栏 ────────────────────────── */
+.filter { padding: 16px 18px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.filter input[type=text], .filter select {
+  padding: 8px 11px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #fff;
+}
+.filter input[type=text] { flex: 1; min-width: 220px; }
+.filter input:focus, .filter select:focus { outline: none; border-color: #2563eb; }
+
+/* ────────────────────────── 表格 ────────────────────────── */
+
+/*
+ * 关键：给表格一个 min-width，窄屏时由 .table-scroll 横向滚动，
+ * 而不是让浏览器压缩列宽（压缩会让中文挤成竖排，更难看）。
+ */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+
+th, td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: top;
+}
+th {
+  background: #fafafa;
+  color: #6b7280;
+  font-weight: 500;
+  white-space: nowrap;   /* 表头不换行，否则「登记时间」会竖排 */
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #fcfcfd; }
+
+/* 数字/等宽类列：右对齐 + 等宽数字，读起来成列而不是跳来跳去 */
+.col-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.col-mono { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* 状态标签 */
+.tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  background: #eef2ff;
+  color: #4338ca;
+  white-space: nowrap;
+}
+
+/* 长文本列：定宽 + 单行省略 */
+.cell-clip { max-width: 320px; }
+.cell-clip-sm { max-width: 200px; }
+.clip {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: help;   /* 悬停显示 title 里的全文 */
+}
+.line-hint { color: #c9ccd1; font-size: 11px; }
+
+.muted { color: #9ca3af; font-size: 13px; }
+.empty { text-align: center; color: #9ca3af; padding: 48px 0; }
+.actions-cell { white-space: nowrap; text-align: right; }
+.foot { text-align: center; }
+
+/* ────────────────────────── 分页 ────────────────────────── */
+.pager { display: flex; justify-content: center; align-items: center; gap: 6px; padding: 16px; flex-wrap: wrap; }
+.pager a, .pager span {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  text-decoration: none;
+  color: #374151;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+}
+.pager a:hover { border-color: #2563eb; color: #2563eb; }
+.pager .current { background: #2563eb; border-color: #2563eb; color: #fff; }
+.pager .disabled { color: #c9ccd1; background: #f9fafb; }
+
+/* ────────────────────────── 详情页 ────────────────────────── */
+dl.detail { display: grid; grid-template-columns: 120px 1fr; gap: 12px 18px; margin: 0; }
+dl.detail dt { color: #6b7280; font-size: 14px; }
+dl.detail dd { margin: 0; font-size: 14px; word-break: break-word; }
+dl.detail dd.pre { white-space: pre-wrap; }   /* 需求描述保留换行 */
+.sep { border: none; border-top: 1px solid #f0f0f0; margin: 24px 0; }
+.note { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 12px 14px; border-radius: 8px; font-size: 13px; line-height: 1.6; }
+h2 { margin: 0 0 16px; font-size: 16px; }
+
+/* ────────────────────────── 响应式 ────────────────────────── */
+
+/*
+ * 窄屏策略：表格不压缩，改为横向滚动。
+ * 优先隐藏次要列（邮箱/职位/地址/来源），保住客户名、手机、状态、操作。
+ */
+@media (max-width: 900px) {
+  .col-opt { display: none; }
+  .cell-clip { max-width: 220px; }
+}
+
+@media (max-width: 640px) {
+  .wrap { padding: 16px 12px; }
+  .bar { padding: 0 12px; gap: 12px; }
+  .bar h1 { display: none; }           /* 窄屏只留品牌名，给导航让位 */
+  th, td { padding: 10px; }
+  .cell-clip, .cell-clip-sm { max-width: 180px; }
+  dl.detail { grid-template-columns: 1fr; gap: 4px 0; }
+  dl.detail dd { margin-bottom: 12px; }
+}

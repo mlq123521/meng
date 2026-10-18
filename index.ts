@@ -21,10 +21,21 @@ app.use((_req, res, next) => {
   next();
 });
 
-/* 4. 业务路由 */
+/* 4. 静态资源：只暴露 views/partials（共享样式表），不开放整个 views 目录。
+      EJS 模板本身是服务端渲染的，不需要也不应该被浏览器直接读到。 */
+app.use(
+  "/partials",
+  express.static(path.join(import.meta.dir, "views", "partials"), {
+    // 开发期不缓存，改完 CSS 刷新就生效
+    etag: true,
+    maxAge: 0,
+  }),
+);
+
+/* 5. 业务路由 */
 app.use("/", router);
 
-/* 5. 兜底：必须注册在所有路由之后 */
+/* 6. 兜底：必须注册在所有路由之后 */
 app.use(notFoundHandler);
 app.use(errorHandler);
 

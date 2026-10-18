@@ -638,7 +638,8 @@ section("20. 列表页摘要");
 
   const page = await req("/?keyword=" + encodeURIComponent(SUM20));
   const cells = [...page.body.matchAll(
-    /<span class="demand-summary" title="([^"]*)">([^<]*)<\/span>/g,
+    // 类名是共享样式表里的 .clip（单行省略 + title 挂全文）
+    /<span class="clip" title="([^"]*)">([^<]*)<\/span>/g,
   )];
 
   ok("三个摘要单元格都渲染了", cells.length === 3, `实际 ${cells.length}`);
@@ -726,7 +727,7 @@ section("21. 备注字段");
 
   // 列表页
   const list = await req(`/?keyword=${RM}`);
-  ok("列表页有备注列", list.body.includes("<th>备注</th>"));
+  ok("列表页有备注列", /<th[^>]*>\s*备注\s*<\/th>/.test(list.body));
   ok("列表页显示备注摘要", list.body.includes(remark) || list.body.includes("remarkSummary"));
   ok("空备注显示占位符", list.body.includes("—"));
 
@@ -768,7 +769,7 @@ section("21. 备注字段");
   ok("档案详情显示备注", pd.body.includes("档案备注内容"));
 
   const pl = await req("/profiles?keyword=" + encodeURIComponent(RM));
-  ok("档案列表有备注列", pl.body.includes("<th>备注</th>"));
+  ok("档案列表有备注列", /<th[^>]*>\s*备注\s*<\/th>/.test(pl.body));
 
   const pe = await req(`/profiles/${pid}/edit`);
   ok("档案编辑页回填备注", pe.body.includes("档案备注内容"));
