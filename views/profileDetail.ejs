@@ -30,6 +30,16 @@
       .btn-danger { background: #dc2626; color: #fff; }
       .btn:hover { opacity: .9; }
       .note { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 12px 14px; border-radius: 8px; font-size: 13px; margin-top: 24px; line-height: 1.6; }
+      h2 { margin: 0 0 16px; font-size: 16px; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { padding: 9px 10px; text-align: left; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+      th { background: #fafafa; color: #6b7280; font-weight: 500; }
+      tr:last-child td { border-bottom: none; }
+      .tag { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; background: #eef2ff; color: #4338ca; white-space: nowrap; }
+      .muted { color: #9ca3af; font-size: 13px; }
+      .btn-link { background: none; border: none; color: #2563eb; cursor: pointer; font-size: 13px; padding: 2px 6px; text-decoration: none; }
+      .btn-link.danger { color: #dc2626; }
+      .btn-link:hover { text-decoration: underline; }
     </style>
   </head>
   <body>
@@ -64,20 +74,50 @@
 
         <div class="actions">
           <a class="btn btn-primary" href="/profiles/<%= profile.id %>/edit">编辑</a>
+          <a class="btn btn-ghost" href="/new?profileId=<%= profile.id %>">+ 登记需求</a>
           <a class="btn btn-ghost" href="/profiles">&larr; 返回档案列表</a>
           <form method="post" action="/profiles/<%= profile.id %>/delete">
             <button
               type="submit"
               class="btn btn-danger"
-              onclick="return confirm('确定删除「<%= profile.companyName %>」这份档案吗？此操作不可恢复。')"
+              onclick="return confirm('确定删除「<%= profile.companyName %>」这份档案吗？\n其下的 <%= demands.length %> 条需求也会一并删除。')"
             >删除</button>
           </form>
         </div>
+      </div>
 
-        <div class="note">
-          当前版本「客户档案」与「需求登记」是两张独立的数据表，尚未关联。
-          后续可扩展为：一个客户对应多条需求，档案详情页内嵌该客户的需求列表。
-        </div>
+      <!-- 该客户的需求列表 -->
+      <div class="card" style="margin-top:16px;">
+        <h2>该客户的需求（<%= demands.length %>）</h2>
+        <% if (demands.length === 0) { %>
+          <p class="muted" style="text-align:center;padding:24px 0;">
+            这位客户还没有需求记录<br />
+            <a href="/new?profileId=<%= profile.id %>" style="color:#2563eb;text-decoration:none;">点右上角「+ 登记需求」</a>
+          </p>
+        <% } else { %>
+          <table>
+            <thead>
+              <tr><th>ID</th><th>需求描述</th><th>状态</th><th>登记时间</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <% demands.forEach(function (d) { %>
+                <tr>
+                  <td><%= d.id %></td>
+                  <td><a href="/demands/<%= d.id %>" style="color:#2563eb;text-decoration:none;"><%= d.demand %></a></td>
+                  <td><span class="tag"><%= d.status %></span></td>
+                  <td class="muted"><%= d.createdAt.toISOString().slice(0, 16).replace("T", " ") %></td>
+                  <td>
+                    <a class="btn-link" href="/demands/<%= d.id %>/edit">编辑</a>
+                    <form method="post" action="/demands/<%= d.id %>/delete" style="display:inline;">
+                      <button type="submit" class="btn-link danger"
+                        onclick="return confirm('确定删除这条需求吗？')">删除</button>
+                    </form>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        <% } %>
       </div>
     </div>
   </body>

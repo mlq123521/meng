@@ -2,7 +2,7 @@
 
 基于 **Bun + Express 5 + EJS + Drizzle ORM + PostgreSQL** 的客户管理系统，采用 MVC 分层结构。
 
-包含两个业务模块：**需求登记** 与 **客户档案**。
+包含两个业务模块：**需求登记** 与 **客户档案**，两者是主从关系 —— 一个客户档案下可以挂多条需求。
 
 ---
 
@@ -102,8 +102,8 @@ bun run cli demand list --page 2 --limit 20 --json
 
 # 查看 / 新增 / 修改
 bun run cli demand get 1
-bun run cli demand add --customer 杭州云启科技 --contact 王经理 \
-    --phone 13812345671 --demand 需要一套CRM系统 --remark 老客户引荐
+bun run cli demand profiles                  # 先看可选的客户档案 id
+bun run cli demand add --profile 1 --demand 需要一套CRM系统 --remark 老客户引荐
 bun run cli demand update 1 --status 已成交     # 只改传入的字段
 
 # 批量删除（先预览，确认后加 --force）
@@ -143,7 +143,8 @@ bun run cli profile list --json | jq '.list[] | select(.source=="展会")'
 | 功能 | 说明 |
 |------|------|
 | 增删改查 | 新建、详情、编辑、删除 |
-| 搜索 | 关键词匹配客户名 / 联系人 / 手机 / 需求描述 |
+| 归属客户 | **每条需求必须挂在一个客户档案下**（外键 NOT NULL） |
+| 搜索 | 关键词同时匹配客户名 / 联系人 / 手机 / 需求描述 / 备注 |
 | 筛选 | 按状态（待跟进 / 沟通中 / 已报价 / 已成交 / 已流失） |
 | 分页 | 每页 10 条，页码越界自动回退 |
 | 导出 | CSV 全量导出，继承当前筛选条件 |
@@ -152,12 +153,30 @@ bun run cli profile list --json | jq '.list[] | select(.source=="展会")'
 
 | 功能 | 说明 |
 |------|------|
-| 增删改查 | 建档、详情、编辑、删除 |
+| 建档 | 建档、详情、编辑、删除 |
 | 搜索 | 关键词匹配公司 / 联系人 / 手机 / 邮箱 / 职位 |
 | 筛选 | 按来源渠道、所属行业 |
 | 分页 | 每页 10 条 |
 | 导出 | CSV 全量导出 |
 | **导入** | CSV 批量导入，按手机号 upsert |
+| **名下需求** | 详情页内嵌该客户的需求列表，可直接跳过去登记一条 |
+
+### 两张表的关系
+
+```
+customer_profiles（客户档案，主表）
+   │ 1
+   │
+   │ N
+demands（需求登记，子表，profile_id NOT NULL → customer_profiles.id ON DELETE CASCADE)
+```
+
+- **一个客户档案可以有多条需求**，详情页直接看到名下全部需求
+- 需求表**不冗余存客户名 / 联系人 / 手机**，一律 join 档案表取 —— 单一事实来源，改一次客户名，需求列表同步更新，不会出现「档案叫 A、需求叫 A 公司」的不一致
+- 登记需求时如果一个客户档案都没有，会引导先去建档（`views/demandNoProfile.ejs`）
+- 删除客户档案会**级联删除**其名下全部需求，删除确认框里会提示「其下的 N 条需求也会一并删除」
+
+> 从档案详情页点「+ 登记需求」会带上 `?profileId=N`，表单自动预选中该客户。
 
 ### 批量导入 `/profiles/import`
 
@@ -174,8 +193,6 @@ bun run cli profile list --json | jq '.list[] | select(.source=="展会")'
 
 回滚入口保留在导入页的**导入历史**里，关掉结果页也能撤销。已撤销的批次会标记为 `rolled_back`，不可重复撤销。
 
-> 客户档案与需求登记目前是**两张独立的数据表**，尚未建立外键关联。
-
 ---
 
 ## 项目结构
@@ -187,20 +204,21 @@ bun run cli profile list --json | jq '.list[] | select(.source=="展会")'
 ├─ .env.example            环境变量模板
 │
 ├─ db/                     ORM 底座
-│  ├─ schema.ts            表结构 + CHECK 约束 + 枚举常量
-│  └─ index.ts             数据库连接实例
+│  ├─ schema.ts            表结构 + CHECK 约束 + 外键 + 枚举常量
+│  ├─ index.ts             数据库连接实例
+│  └─ migrate-demands.ts   一次性迁移：customers → demands（已执行，可删）
 │
 ├─ models/                 M —— 数据访问
-│  ├─ customer.ts
-│  └─ profile.ts
+│  ├─ demand.ts            需求登记（含 join 客户档案）
+│  └─ profile.ts           客户档案 + CSV 导入 + 批次回滚
 │
 ├─ controllers/            C —— 业务编排
-│  ├─ customerController.ts
+│  ├─ demandController.ts
 │  └─ profileController.ts
 │
 ├─ routes/                 R —— 路由表
 │  ├─ index.ts             总入口，合并挂载各模块
-│  ├─ customer.ts
+│  ├─ demand.ts
 │  └─ profile.ts
 │
 ├─ middleware/
@@ -209,11 +227,12 @@ bun run cli profile list --json | jq '.list[] | select(.source=="展会")'
 ├─ utils/
 │  ├─ csv.ts               CSV 转义 + 公式注入防护
 │  ├─ like.ts              LIKE 通配符转义
+│  ├─ pgError.ts           从 SQLSTATE 判断错误类型（23503/23505/23514）
 │  └─ validate.ts          字段校验规则
 │
 ├─ views/                  V —— EJS 模板
 │  ├─ partials/nav.ejs     共用导航片段
-│  ├─ customerList.ejs / customerForm.ejs / customerDetail.ejs
+│  ├─ demandList.ejs / demandForm.ejs / demandDetail.ejs / demandNoProfile.ejs
 │  ├─ profileList.ejs / profileForm.ejs / profileDetail.ejs
 │  ├─ customerNotFound.ejs
 │  └─ error.ejs
@@ -248,15 +267,16 @@ HTTP 响应
 
 所有字段在**应用层和数据库层双重校验**，绕过应用直接写库也会被拦住。
 
-### `customers`（需求登记）
+### `demands`（需求登记）
 
 | 约束 |
 |------|
-| `customer_name` 1–60 字 |
-| `contact_name` 1–30 字 |
-| `phone` 匹配 `^1[3-9][0-9]{9}$` |
+| `profile_id` **NOT NULL**，外键 → `customer_profiles(id)`，`ON DELETE CASCADE` |
 | `demand` 1–1000 字 |
 | `status` ∈ {待跟进, 沟通中, 已报价, 已成交, 已流失} |
+| `remark` ≤ 500 字（可空） |
+
+客户名 / 联系人 / 手机**不存在这张表**，join `customer_profiles` 取，所以不存在「两份数据对不上」的问题。
 
 ### `customer_profiles`（客户档案）
 
@@ -305,11 +325,19 @@ HTTP 响应
 ## 测试
 
 ```bash
-bun run dev            # 终端 1
-bun run test:smoke     # 终端 2
+bun run dev            # 终端 1：启动服务
+bun run test:all       # 终端 2：跑全部五套测试（需服务在运行）
 ```
 
-覆盖 20 个场景、136 项断言，包括：CRUD、校验边界（60 vs 61 字、手机/邮箱格式）、SQL 注入、XSS 转义、CSV 注入、分页越界、非法 id、并发写入、Unicode、CSV 导出等。
+五个套件共 **332 项断言**：
+
+| 套件 | 项数 | 覆盖 |
+|------|-----|------|
+| `test/smoke.ts` | 179 | 21 个场景：CRUD、校验边界、外键约束、SQL 注入、XSS 转义、CSV 注入、分页越界、非法 id、并发写入、Unicode、摘要截断、备注字段 |
+| `test/import.test.ts` | 43 | CSV 解析、表头容错、行数上限、upsert、错误行报告、公式注入防护 |
+| `test/atomic.test.ts` | 18 | 导入的事务原子性与回滚 |
+| `test/batch.test.ts` | 27 | 批次记录与撤销、500 行性能、**档案↔需求的关联与级联** |
+| `test/cli.test.ts` | 65 | CLI 全命令、`--json`、批量删除的确认机制 |
 
 测试数据自带清理逻辑，可重复运行且不留残留。
 
@@ -318,8 +346,7 @@ bun run test:smoke     # 终端 2
 ## 已知限制
 
 - **无登录鉴权**：任何人都能读写全部数据，仅适合内网使用
-- 客户档案与需求登记**未建立关联**
-- 删除为硬删除，无回收站
+- 删除为硬删除，无回收站（档案删除会级联删掉名下需求）
 
 ---
 

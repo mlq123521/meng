@@ -13,6 +13,7 @@ import {
   PAGE_SIZE,
   type ProfileRow,
 } from "../models/profile";
+import { getDemandsByProfile } from "../models/demand";
 import { SOURCES } from "../db/schema";
 import { validateProfile, type ProfileInput } from "../utils/validate";
 import { toCsv, csvHeaders } from "../utils/csv";
@@ -448,10 +449,12 @@ export async function detail(req: Request, res: Response): Promise<void> {
   const profile = id === null ? undefined : await getProfileById(id);
 
   if (!profile) {
-    res.status(404).render("customerNotFound", { id: req.params.id });
+    res.status(404).render("recordNotFound", { id: req.params.id });
     return;
   }
-  res.render("profileDetail", { profile });
+
+  // 该客户名下的需求，打通后在档案详情页直接可见
+  res.render("profileDetail", { profile, demands: await getDemandsByProfile(profile.id) });
 }
 
 /* ────────────────────────── 编辑 ────────────────────────── */
@@ -461,7 +464,7 @@ export async function editForm(req: Request, res: Response): Promise<void> {
   const profile = id === null ? undefined : await getProfileById(id);
 
   if (!profile) {
-    res.status(404).render("customerNotFound", { id: req.params.id });
+    res.status(404).render("recordNotFound", { id: req.params.id });
     return;
   }
 
@@ -479,13 +482,13 @@ export async function update(req: Request, res: Response): Promise<void> {
   const id = parseId(req.params.id);
 
   if (id === null) {
-    res.status(404).render("customerNotFound", { id: req.params.id });
+    res.status(404).render("recordNotFound", { id: req.params.id });
     return;
   }
 
   const existing = await getProfileById(id);
   if (!existing) {
-    res.status(404).render("customerNotFound", { id: req.params.id });
+    res.status(404).render("recordNotFound", { id: req.params.id });
     return;
   }
 
@@ -507,7 +510,7 @@ export async function update(req: Request, res: Response): Promise<void> {
   try {
     const updated = await updateProfile(id, toRow(values));
     if (!updated) {
-      res.status(404).render("customerNotFound", { id: req.params.id });
+      res.status(404).render("recordNotFound", { id: req.params.id });
       return;
     }
     res.redirect(`/profiles/${id}`);
@@ -534,13 +537,13 @@ export async function remove(req: Request, res: Response): Promise<void> {
   const id = parseId(req.params.id);
 
   if (id === null) {
-    res.status(404).render("customerNotFound", { id: req.params.id });
+    res.status(404).render("recordNotFound", { id: req.params.id });
     return;
   }
 
   const deleted = await deleteProfile(id);
   if (!deleted) {
-    res.status(404).render("customerNotFound", { id: req.params.id });
+    res.status(404).render("recordNotFound", { id: req.params.id });
     return;
   }
   res.redirect("/profiles");

@@ -1,37 +1,41 @@
-/** CLI —— 需求登记（customers） */
+/** CLI —— 需求登记（demands） */
 import {
-  getCustomerList,
-  getCustomersForExport,
-  getCustomerById,
-  createCustomer,
-  updateCustomer,
-  deleteCustomers,
+  getDemandList,
+  getDemandsForExport,
+  getDemandById,
+  createDemand,
+  updateDemand,
+  deleteDemands,
+  listProfilesForSelect,
   PAGE_SIZE,
-  type CustomerInput,
-} from "../../models/customer";
+} from "../../models/demand";
 import { STATUSES } from "../../db/schema";
-import { validateCustomer } from "../../utils/validate";
+import { validateDemand } from "../../utils/validate";
+import { isForeignKeyViolation } from "../../utils/pgError";
 import { oneLine } from "../../utils/text";
 import { toCsv } from "../../utils/csv";
 import { parseArgs, str, bool, num, type ParsedArgs } from "../args";
 import { table, json, keyValue, ok, fail, heading } from "../format";
-import { reportDbError } from "../errors";
 
 const entity = "需求登记";
 
-/** 从选项拼出 CustomerInput，缺失的字段留空由调用方合并 */
-export function inputFromFlags(a: ParsedArgs): Partial<CustomerInput> {
-  const out: Partial<CustomerInput> = {};
-  const set = (k: keyof CustomerInput, flag: string) => {
+/** 选项 → 表单字段 */
+function inputFromFlags(a: ParsedArgs) {
+  const out: { profileId?: string; demand?: string; remark?: string; status?: string } = {};
+  const set = (k: keyof typeof out, flag: string) => {
     if (typeof a.flags[flag] === "string") out[k] = a.flags[flag] as never;
   };
-  set("customerName", "customer");
-  set("contactName", "contact");
-  set("phone", "phone");
+  set("profileId", "profile");
   set("demand", "demand");
   set("remark", "remark");
   set("status", "status");
   return out;
+}
+
+/** 把 id 解析为正整数 */
+function parseId(raw: string): number | null {
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
 }
 
 export async function run(argv: string[]): Promise<number> {
@@ -48,22 +52,20 @@ export async function run(argv: string[]): Promise<number> {
     case "rm":
     case "delete": return cmdRemove(pos, flags, asJson);
     case "export": return cmdExport(flags);
+    case "profiles": return cmdProfiles(asJson); // 列出可选客户，方便查 id
     default:
-      fail(`未知命令「${cmd}」。可用：list / get / add / update / remove / export`);
+      fail(`未知命令「${cmd}」。可用：list / get / add / update / remove / export / profiles`);
       return 1;
   }
 }
 
 /* ────────────────────── list ────────────────────── */
 async function cmdList(flags: ParsedArgs["flags"], asJson: boolean): Promise<number> {
-  const page = num(flags, "page", 1);
-  const limit = num(flags, "limit", PAGE_SIZE);
-
-  const data = await getCustomerList({
+  const data = await getDemandList({
     keyword: str(flags, "keyword") || str(flags, "k"),
     status: str(flags, "status") || str(flags, "s"),
-    page,
-    pageSize: limit,
+    page: num(flags, "page", 1),
+    pageSize: num(flags, "limit", PAGE_SIZE),
   });
 
   if (asJson) {
@@ -73,15 +75,15 @@ async function cmdList(flags: ParsedArgs["flags"], asJson: boolean): Promise<num
 
   heading(`${entity}列表（第 ${data.page}/${data.totalPages} 页，共 ${data.total} 条）`);
   table(
-    data.list.map((c) => ({
-      ID: c.id,
-      客户名: c.customerName,
-      联系人: c.contactName,
-      手机: c.phone,
-      状态: c.status,
-      需求描述: oneLine(c.demand, 30),
-      备注: oneLine(c.remark, 20),
-      登记时间: c.createdAt.toISOString().slice(0, 16).replace("T", " "),
+    data.list.map((d) => ({
+      ID: d.id,
+      客户: d.companyName,
+      联系人: d.contactName,
+      手机: d.phone,
+      状态: d.status,
+      需求描述: oneLine(d.demand, 28),
+      备注: oneLine(d.remark, 18),
+      登记时间: d.createdAt.toISOString().slice(0, 16).replace("T", " "),
     })),
   );
   return 0;
@@ -89,102 +91,122 @@ async function cmdList(flags: ParsedArgs["flags"], asJson: boolean): Promise<num
 
 /* ────────────────────── get ────────────────────── */
 async function cmdGet(pos: string[], asJson: boolean): Promise<number> {
-  const id = Number(pos[1]);
-  if (!Number.isInteger(id) || id <= 0) {
+  const id = parseId(pos[1] ?? "");
+  if (id === null) {
     fail("用法：demand get <id>");
     return 1;
   }
 
-  const c = await getCustomerById(id);
-  if (!c) {
+  const d = await getDemandById(id);
+  if (!d) {
     fail(`未找到需求 #${id}`);
     return 1;
   }
 
   if (asJson) {
-    json(c);
+    json(d);
     return 0;
   }
 
   keyValue([
-    ["编号", c.id],
-    ["客户名", c.customerName],
-    ["联系人", c.contactName],
-    ["手机", c.phone],
-    ["状态", c.status],
-    ["需求描述", c.demand],
-    ["备注", c.remark],
-    ["登记时间", c.createdAt.toISOString().slice(0, 19).replace("T", " ")],
+    ["需求编号", d.id],
+    ["客户", d.companyName],
+    ["联系人", d.contactName],
+    ["手机", d.phone],
+    ["档案编号", d.profileId],
+    ["状态", d.status],
+    ["需求描述", d.demand],
+    ["备注", d.remark],
+    ["登记时间", d.createdAt.toISOString().slice(0, 19).replace("T", " ")],
   ]);
+  return 0;
+}
+
+/* ────────────────────── profiles（辅助命令） ────────────────────── */
+async function cmdProfiles(asJson: boolean): Promise<number> {
+  const list = await listProfilesForSelect();
+  if (asJson) {
+    json(list);
+    return 0;
+  }
+  heading("可作为需求归属的客户档案");
+  table(list.map((p) => ({ 档案ID: p.id, 公司: p.companyName, 联系人: p.contactName, 手机: p.phone })));
+  console.log("\n用 --profile <档案ID> 指定需求归属的客户。");
   return 0;
 }
 
 /* ────────────────────── add ────────────────────── */
 async function cmdAdd(flags: ParsedArgs["flags"], asJson: boolean): Promise<number> {
-  const input: CustomerInput = {
-    customerName: str(flags, "customer"),
-    contactName: str(flags, "contact"),
-    phone: str(flags, "phone"),
+  const input = {
+    profileId: str(flags, "profile"),
     demand: str(flags, "demand"),
     remark: str(flags, "remark"),
     status: str(flags, "status") || STATUSES[0],
   };
 
-  const { ok: valid, message } = validateCustomer(input);
+  const { ok: valid, message } = validateDemand(input);
   if (!valid) {
     fail(message);
     return 1;
   }
 
   try {
-    const created = await createCustomer({ ...input, remark: input.remark || null });
-
+    const created = await createDemand({
+      profileId: Number(input.profileId),
+      demand: input.demand,
+      remark: input.remark,
+      status: input.status,
+    });
     if (asJson) {
       json(created);
       return 0;
     }
-    ok(`已登记需求 #${created.id}（${created.customerName}）`);
+    ok(`已登记需求 #${created.id}（${created.companyName}）`);
     return 0;
   } catch (err) {
-    if (reportDbError(err)) return 1;
+    if (isForeignKeyViolation(err)) {
+      fail(`客户档案 #${input.profileId} 不存在。用 demand profiles 查看可用档案。`);
+      return 1;
+    }
     throw err;
   }
 }
 
 /* ────────────────────── update ────────────────────── */
 async function cmdUpdate(pos: string[], flags: ParsedArgs["flags"], asJson: boolean): Promise<number> {
-  const id = Number(pos[1]);
-  if (!Number.isInteger(id) || id <= 0) {
-    fail("用法：demand update <id> [--customer X] [--contact Y] [--phone Z] [--demand D] [--status S] [--remark R]");
+  const id = parseId(pos[1] ?? "");
+  if (id === null) {
+    fail("用法：demand update <id> [--profile P] [--demand D] [--status S] [--remark R]");
     return 1;
   }
 
-  const existing = await getCustomerById(id);
+  const existing = await getDemandById(id);
   if (!existing) {
     fail(`未找到需求 #${id}`);
     return 1;
   }
 
-  // 只更新显式传入的字段，其余沿用原值
   const patch = inputFromFlags({ _: [], flags });
-  const merged: CustomerInput = {
-    customerName: patch.customerName ?? existing.customerName,
-    contactName: patch.contactName ?? existing.contactName,
-    phone: patch.phone ?? existing.phone,
+  const merged = {
+    profileId: patch.profileId ?? String(existing.profileId),
     demand: patch.demand ?? existing.demand,
     remark: patch.remark ?? existing.remark ?? "",
     status: patch.status ?? existing.status,
   };
 
-  const { ok: valid, message } = validateCustomer(merged);
+  const { ok: valid, message } = validateDemand(merged);
   if (!valid) {
     fail(message);
     return 1;
   }
 
   try {
-    const updated = await updateCustomer(id, { ...merged, remark: merged.remark || null });
-
+    const updated = await updateDemand(id, {
+      profileId: Number(merged.profileId),
+      demand: merged.demand,
+      remark: merged.remark,
+      status: merged.status,
+    });
     if (asJson) {
       json(updated);
       return 0;
@@ -192,15 +214,17 @@ async function cmdUpdate(pos: string[], flags: ParsedArgs["flags"], asJson: bool
     ok(`已更新需求 #${id}`);
     return 0;
   } catch (err) {
-    if (reportDbError(err)) return 1;
+    if (isForeignKeyViolation(err)) {
+      fail(`客户档案 #${merged.profileId} 不存在`);
+      return 1;
+    }
     throw err;
   }
 }
 
 /* ────────────────────── remove（支持批量） ────────────────────── */
 async function cmdRemove(pos: string[], flags: ParsedArgs["flags"], asJson: boolean): Promise<number> {
-  // 同时接受 `1 2 3` 和 `1,2,3`
-  // （PowerShell 会把逗号当数组分隔符，2,3,4 实际传进来是 "2 3 4"）
+  // 同时接受 `1 2 3` 和 `1,2,3`（PowerShell 会把逗号当数组分隔符）
   const ids = pos
     .slice(1)
     .flatMap((s) => s.split(/[,\s]+/))
@@ -213,22 +237,20 @@ async function cmdRemove(pos: string[], flags: ParsedArgs["flags"], asJson: bool
     return 1;
   }
 
-  const force = bool(flags, "force") || bool(flags, "f");
-
-  if (!force && !bool(flags, "yes") && !bool(flags, "y")) {
-    const rows = await Promise.all(ids.map((id) => getCustomerById(id)));
+  if (!bool(flags, "force") && !bool(flags, "yes") && !bool(flags, "f")) {
+    const rows = await Promise.all(ids.map((id) => getDemandById(id)));
     const found = rows.filter((r): r is NonNullable<typeof r> => Boolean(r));
     if (found.length === 0) {
       fail("指定的记录都不存在");
       return 1;
     }
     console.log("将要删除：");
-    table(found.map((c) => ({ ID: c.id, 客户名: c.customerName, 需求: oneLine(c.demand, 24) })));
+    table(found.map((d) => ({ ID: d.id, 客户: d.companyName, 需求: oneLine(d.demand, 24) })));
     console.log("\n加 --force 跳过确认，或逐条执行。");
     return 1;
   }
 
-  const deleted = await deleteCustomers(ids);
+  const deleted = await deleteDemands(ids);
 
   if (asJson) {
     json({ deleted: deleted.length, ids: deleted.map((d) => d.id) });
@@ -240,21 +262,21 @@ async function cmdRemove(pos: string[], flags: ParsedArgs["flags"], asJson: bool
 
 /* ────────────────────── export ────────────────────── */
 async function cmdExport(flags: ParsedArgs["flags"]): Promise<number> {
-  const rows = await getCustomersForExport({
+  const rows = await getDemandsForExport({
     keyword: str(flags, "keyword") || str(flags, "k"),
     status: str(flags, "status") || str(flags, "s"),
   });
 
-  const table2: unknown[][] = [
+  const tableData: unknown[][] = [
     ["编号", "客户名", "联系人", "手机", "需求描述", "状态", "备注", "登记时间"],
-    ...rows.map((c) => [
-      c.id, c.customerName, c.contactName, c.phone,
-      c.demand, c.status, c.remark,
-      c.createdAt.toISOString().slice(0, 19).replace("T", " "),
+    ...rows.map((d) => [
+      d.id, d.companyName, d.contactName, d.phone,
+      d.demand, d.status, d.remark,
+      d.createdAt.toISOString().slice(0, 19).replace("T", " "),
     ]),
   ];
 
-  const csv = "﻿" + toCsv(table2);
+  const csv = "﻿" + toCsv(tableData);
   const out = str(flags, "out") || str(flags, "o");
 
   if (out) {

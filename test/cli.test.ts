@@ -36,15 +36,15 @@ async function cli(...args: string[]) {
 const MARK = "CLI" + Math.random().toString(36).slice(2, 6);
 
 async function cleanup() {
-  await db`DELETE FROM customers WHERE customer_name LIKE ${`%${MARK}%`}`;
-  await db`DELETE FROM customer_profiles WHERE company_name LIKE ${`%${MARK}%`}`;
+  await db`DELETE FROM demands`;
+  await db`DELETE FROM customer_profiles`;
 }
 
 console.log("\n── 0. 环境准备 ──────────────────────────────");
 {
   // ⚠️ 必须 RESTART IDENTITY，否则序列不重置，
   //    后面硬编码的 id（2/3/4）会指向别的记录
-  await db.unsafe("TRUNCATE customers, customer_profiles RESTART IDENTITY CASCADE");
+  await db.unsafe("TRUNCATE demands, customer_profiles RESTART IDENTITY CASCADE");
   ok("已清空数据表且序列归零", true);
 }
 
@@ -63,15 +63,23 @@ console.log("\n── 1. 帮助与错误处理 ───────────
   ok("未知命令返回非 0", badcmd.code !== 0);
 
   const modHelp = await cli("demand", "--help");
-  ok("模块级帮助含字段说明", modHelp.out.includes("--customer"), modHelp.out.slice(0, 100));
+  ok("模块级帮助含字段说明", modHelp.out.includes("--profile"), modHelp.out.slice(0, 120));
 }
 
 console.log("\n── 2. 需求登记 CRUD ────────────────────────");
 let demandId = 0;
+/** 需求必须挂在客户档案下，所以先建一份 */
+let profileId = 0;
 {
+  const pa = await cli("profile", "add",
+    "--company", `${MARK}科技有限公司`, "--contact", "王经理",
+    "--phone", "13812345090", "--source", "其他");
+  ok("先建客户档案", pa.code === 0, pa.out + pa.err);
+  profileId = Number(pa.out.match(/#(\d+)/)?.[1] ?? 0);
+  ok("拿到档案 id", profileId > 0, `实际 ${profileId}`);
+
   const add = await cli("demand", "add",
-    "--customer", `${MARK}科技有限公司`, "--contact", "王经理",
-    "--phone", "13812345001", "--demand", "需要一套完整的客户关系管理系统",
+    "--profile", String(profileId), "--demand", "需要一套完整的客户关系管理系统",
     "--status", "待跟进", "--remark", "老客户引荐");
   ok("add 成功", add.code === 0 && add.out.includes("已登记"), add.out + add.err);
   demandId = Number(add.out.match(/#(\d+)/)?.[1] ?? 0);
@@ -84,7 +92,7 @@ let demandId = 0;
 
   const list = await cli("demand", "list");
   ok("list 正常", list.code === 0);
-  ok("list 含表头", list.out.includes("客户名") && list.out.includes("状态"));
+  ok("list 含表头", list.out.includes("客户") && list.out.includes("状态"));
   ok("list 含数据", list.out.includes(`${MARK}科技有限公司`));
   ok("list 显示条数", list.out.includes("共 1 条"), list.out.split("\n")[1]);
 
@@ -94,8 +102,8 @@ let demandId = 0;
   ok("update 只改指定字段", after.out.includes("已成交"));
   ok("update 未影响其他字段", after.out.includes(`${MARK}科技有限公司`) && after.out.includes("老客户引荐"));
 
-  const bad = await cli("demand", "update", String(demandId), "--phone", "123");
-  ok("非法手机号被拒", bad.code !== 0 && bad.err.includes("11 位"), bad.err.slice(0, 100));
+  const bad = await cli("demand", "update", String(demandId), "--demand", "");
+  ok("空需求描述被拒", bad.code !== 0, bad.err.slice(0, 100));
 
   const missing = await cli("demand", "get", "999999");
   ok("查不存在的记录返回非 0", missing.code !== 0);
@@ -104,8 +112,8 @@ let demandId = 0;
 console.log("\n── 3. 搜索与筛选 ──────────────────────────");
 {
   // 顺便验证空值占位：这条不填备注
-  const noRemark = await cli("demand", "add", "--customer", `${MARK}上海公司`,
-    "--contact", "李总", "--phone", "13812345002", "--demand", "需求B", "--status", "沟通中");
+  const noRemark = await cli("demand", "add", "--profile", String(profileId),
+    "--demand", `${MARK}上海公司 需求B`, "--status", "沟通中");
   ok("第二条需求新增成功", noRemark.code === 0, noRemark.out + noRemark.err);
 
   const blankId = Number(noRemark.out.match(/#(\d+)/)?.[1] ?? 0);
@@ -133,8 +141,8 @@ console.log("\n── 4. 批量删除 ──────────────
 {
   const ids = [2, 3, 4];
   for (const id of ids) {
-    await cli("demand", "add", "--customer", `${MARK}批量${id}`, "--contact", "批",
-      "--phone", `1381234501${id}`, "--demand", `需求${id}`);
+    await cli("demand", "add", "--profile", String(profileId),
+      "--demand", `${MARK}批量${id} 需求${id}`);
   }
 
   const noForce = await cli("demand", "remove", "2", "3");
@@ -155,8 +163,8 @@ console.log("\n── 4. 批量删除 ──────────────
   ok("提示有记录不存在", partial.out.includes("不存在"), partial.out);
 
   // 逗号形式（PowerShell 下会被转成空格）
-  await cli("demand", "add", "--customer", `${MARK}逗号测试`, "--contact", "x",
-    "--phone", "13812345009", "--demand", "d");
+  await cli("demand", "add", "--profile", String(profileId),
+    "--demand", `${MARK}逗号测试 d`);
   const comma = await cli("demand", "remove", "5,6", "--force");
   ok("逗号/空格混合分隔可用", comma.code === 0, comma.out + comma.err);
 }
@@ -212,7 +220,7 @@ console.log("\n── 6. JSON 输出 ──────────────�
 
 console.log("\n── 7. CSV 导出 ────────────────────────────");
 {
-  const before = await db`SELECT count(*)::int AS n FROM customers`;
+  const before = await db`SELECT count(*)::int AS n FROM demands`;
   const expect = Number(before[0].n);
 
   const outFile = `${import.meta.dir}/../../tmp-cli-export.csv`;
@@ -233,14 +241,14 @@ console.log("\n── 7. CSV 导出 ──────────────�
   await Bun.$`del ${outFile}`.quiet().nothrow();
 
   const stdout = await cli("demand", "export");
-  ok("不带 -o 时输出到 stdout", stdout.out.includes("编号,客户名"), stdout.out.slice(0, 60));
+  ok("不带 -o 时输出到 stdout", stdout.out.includes("编号,客户名,联系人"), stdout.out.slice(0, 60));
 }
 
 console.log("\n── 8. 中日韩字符列对齐 ─────────────────────");
 {
   // 全角字符占 2 列，如果没算对表头会错位
   const list = await cli("demand", "list");
-  const headerLine = list.out.split("\n").find((l) => l.includes("客户名"));
+  const headerLine = list.out.split("\n").find((l) => l.includes("客户") && l.includes("需求描述"));
   const sepLine = list.out.split("\n")[2];
   ok("表头含中文列", !!headerLine);
   ok("分隔线存在", !!sepLine && sepLine.includes("─"));
@@ -251,7 +259,7 @@ console.log("\n── 8. 中日韩字符列对齐 ──────────
 
 console.log("\n── 清理 ────────────────────────────────────");
 await cleanup();
-const left = await db`SELECT (SELECT count(*) FROM customers) AS d, (SELECT count(*) FROM customer_profiles) AS p`;
+const left = await db`SELECT (SELECT count(*) FROM demands) AS d, (SELECT count(*) FROM customer_profiles) AS p`;
 ok("测试数据已清空", Number(left[0].d) === 0 && Number(left[0].p) === 0, JSON.stringify(left[0]));
 
 console.log("\n" + "═".repeat(50));

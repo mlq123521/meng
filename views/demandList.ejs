@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>客户需求登记</title>
+    <title>需求登记</title>
     <style>
       * { box-sizing: border-box; }
       body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f5f6f8; margin: 0; color: #1f2937; }
@@ -90,7 +90,7 @@
           <thead>
             <tr>
               <th>ID</th>
-              <th>客户名</th>
+              <th>客户</th>
               <th>联系人</th>
               <th>手机</th>
               <th>需求描述</th>
@@ -115,38 +115,38 @@
               </tr>
             <% } %>
 
-            <% list.forEach(function (c) { %>
+            <% list.forEach(function (d) { %>
               <tr>
-                <td><%= c.id %></td>
+                <td><%= d.id %></td>
                 <td>
-                  <a href="/customers/<%= c.id %>"><strong><%= c.customerName %></strong></a>
+                  <a href="/profiles/<%= d.profileId %>"><strong><%= d.companyName %></strong></a>
                 </td>
-                <td><%= c.contactName %></td>
-                <td><%= c.phone %></td>
+                <td><%= d.contactName %></td>
+                <td><%= d.phone %></td>
                 <td class="demand-cell">
                   <!-- 摘要：单行显示，超出部分截断；鼠标悬停看全文 -->
-                  <span class="demand-summary" title="<%= c.demand %>"><%= c.demandSummary %></span>
-                  <% if (c.demandLines > 1) { %>
-                    <span class="line-hint"><%= c.demandLines %> 行</span>
+                  <span class="demand-summary" title="<%= d.demand %>"><%= d.demandSummary %></span>
+                  <% if (d.demandLines > 1) { %>
+                    <span class="line-hint"><%= d.demandLines %> 行</span>
                   <% } %>
                 </td>
-                <td><span class="tag"><%= c.status %></span></td>
+                <td><span class="tag"><%= d.status %></span></td>
                 <td class="demand-cell">
-                  <% if (c.remark) { %>
-                    <span class="demand-summary" title="<%= c.remark %>"><%= c.remarkSummary %></span>
+                  <% if (d.remark) { %>
+                    <span class="demand-summary" title="<%= d.remark %>"><%= d.remarkSummary %></span>
                   <% } else { %>
                     <span class="muted">—</span>
                   <% } %>
                 </td>
-                <td class="muted"><%= c.createdAt.toISOString().slice(0, 16).replace("T", " ") %></td>
+                <td class="muted"><%= d.createdAt.toISOString().slice(0, 16).replace("T", " ") %></td>
                 <td class="actions-cell">
-                  <a class="btn-link" href="/customers/<%= c.id %>">详情</a>
-                  <a class="btn-link" href="/customers/<%= c.id %>/edit">编辑</a>
-                  <form method="post" action="/customers/<%= c.id %>/delete" style="display: inline;">
+                  <a class="btn-link" href="/demands/<%= d.id %>">详情</a>
+                  <a class="btn-link" href="/demands/<%= d.id %>/edit">编辑</a>
+                  <form method="post" action="/demands/<%= d.id %>/delete" style="display: inline;">
                     <button
                       type="submit"
                       class="btn-link danger"
-                      onclick="return confirm('确定删除「<%= c.customerName %>」这条需求吗？此操作不可恢复。')"
+                      onclick="return confirm('确定删除「<%= d.companyName %>」的这条需求吗？此操作不可恢复。')"
                     >删除</button>
                   </form>
                 </td>

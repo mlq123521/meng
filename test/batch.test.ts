@@ -139,6 +139,63 @@ console.log("\n── 4. 批次状态流转 ────────────
   ok("导入页显示已撤销状态", page.includes("已撤销"));
 }
 
+console.log("\n── 5. 客户档案与需求的关联 ──────────────────────");
+{
+  const relId = "REL" + SEED;
+
+  // 建一个客户档案
+  await db`DELETE FROM demands`;
+  await db`DELETE FROM customer_profiles`;
+  const [prof] = await db`
+    INSERT INTO customer_profiles (company_name, contact_name, phone, source)
+    VALUES (${relId}::text || ' 公司', '关系测试人', '13877000001', '其他')
+    RETURNING id
+  `;
+
+  // 挂两条需求
+  await db`INSERT INTO demands (profile_id, demand, status) VALUES (${prof.id}, ${`${relId} 需求一`}, '待跟进')`;
+  await db`INSERT INTO demands (profile_id, demand, status) VALUES (${prof.id}, ${`${relId} 需求二`}, '已成交')`;
+
+  // 一个客户可以有多条需求
+  const mine = await db`SELECT count(*)::int AS n FROM demands WHERE profile_id = ${prof.id}`;
+  ok("一个客户档案可挂多条需求", Number(mine[0].n) === 2, `实际 ${mine[0].n}`);
+
+  // 需求表里不再冗余存客户名
+  const cols = await db`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'demands' ORDER BY ordinal_position
+  `;
+  const names = cols.map((c: any) => c.column_name);
+  ok("需求表无冗余的 customer_name", !names.includes("customer_name"), names.join(","));
+  ok("需求表有 profile_id 外键", names.includes("profile_id"), names.join(","));
+  ok("需求表只保留需求自身字段",
+    !names.includes("contact_name") && !names.includes("phone"), names.join(","));
+
+  // 单一事实来源：改客户名，需求侧同步（需求表没存名字，所以必然同步）
+  await db`UPDATE customer_profiles SET company_name = ${relId + '（已改名）'} WHERE id = ${prof.id}`;
+  const joined = await db`
+    SELECT p.company_name, d.demand FROM demands d
+    JOIN customer_profiles p ON p.id = d.profile_id
+    WHERE d.demand LIKE ${`%${relId}%`}
+  `;
+  ok("改客户名后需求侧同步显示", joined.every((r: any) => r.company_name.includes("已改名")),
+    JSON.stringify(joined[0]?.company_name));
+
+  // 不存在的客户插不进来（外键）
+  try {
+    await db`INSERT INTO demands (profile_id, demand, status) VALUES (999999, '孤儿需求', '待跟进')`;
+    ok("孤儿需求被外键拒绝", false, "竟然插入成功");
+  } catch (e: any) {
+    ok("孤儿需求被外键拒绝", e.code === "23503" || String(e.message).includes("外键"),
+      `${e.code} ${String(e.message).slice(0, 60)}`);
+  }
+
+  // 级联删除：删档案 → 需求一起消失
+  await db`DELETE FROM customer_profiles WHERE id = ${prof.id}`;
+  const left = await db`SELECT count(*)::int AS n FROM demands WHERE profile_id = ${prof.id}`;
+  ok("删档案时需求级联删除", Number(left[0].n) === 0, `残留 ${left[0].n} 条`);
+}
+
 console.log("\n── 清理 ────────────────────────────────────");
 await db`DELETE FROM customer_profiles`;
 await db`DELETE FROM import_batches`;

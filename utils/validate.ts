@@ -9,39 +9,8 @@ export const LIMITS = {
   remark: 500,
 } as const;
 
-export type FieldName = keyof typeof LIMITS;
-
 /** 手机号：中国大陆 11 位，1 开头，第二位 3-9 */
 const PHONE_RE = /^1[3-9]\d{9}$/;
-
-/** 单个字段的校验规则 */
-export const RULES: Record<FieldName, { label: string; test: (v: string) => boolean; hint: string }> = {
-  customerName: {
-    label: "客户名",
-    test: (v) => v.length > 0 && v.length <= LIMITS.customerName,
-    hint: `必填，不超过 ${LIMITS.customerName} 字`,
-  },
-  contactName: {
-    label: "联系人",
-    test: (v) => v.length > 0 && v.length <= LIMITS.contactName,
-    hint: `必填，不超过 ${LIMITS.contactName} 字`,
-  },
-  phone: {
-    label: "手机",
-    test: (v) => PHONE_RE.test(v),
-    hint: "必须是 1 开头的 11 位手机号",
-  },
-  demand: {
-    label: "需求描述",
-    test: (v) => v.length > 0 && v.length <= LIMITS.demand,
-    hint: `必填，不超过 ${LIMITS.demand} 字`,
-  },
-  remark: {
-    label: "备注",
-    test: (v) => v.length <= LIMITS.remark,
-    hint: `选填，不超过 ${LIMITS.remark} 字`,
-  },
-};
 
 export interface ValidationResult {
   ok: boolean;
@@ -49,34 +18,42 @@ export interface ValidationResult {
   message: string;
 }
 
-/** 校验整份表单 */
-export function validateCustomer(input: {
-  customerName: string;
-  contactName: string;
-  phone: string;
+/** 需求（demands）表单校验 */
+export interface DemandForm {
+  profileId: string; // 从表单传来是字符串
   demand: string;
   remark: string;
   status: string;
-}): ValidationResult {
-  for (const field of Object.keys(RULES) as FieldName[]) {
-    const rule = RULES[field];
-    const value = input[field];
-    // 选填字段留空直接跳过
-    if (value === "" && field === "remark") continue;
-    if (!rule.test(value)) {
-      return { ok: false, message: `${rule.label}：${rule.hint}` };
-    }
+}
+
+/**
+ * 校验需求表单
+ * 客户档案是外键，这里只校验「选了没选、是不是数字」，
+ * 真正的存在性由数据库外键兜底
+ */
+export function validateDemand(input: DemandForm): ValidationResult {
+  const pid = Number(input.profileId);
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return { ok: false, message: "请选择一个客户档案" };
   }
 
-  // 状态必须在白名单内（防止前端被绕过）
+  if (!input.demand || input.demand.length === 0) {
+    return { ok: false, message: `需求描述：必填，不超过 ${LIMITS.demand} 字` };
+  }
+  if (input.demand.length > LIMITS.demand) {
+    return { ok: false, message: `需求描述：必填，不超过 ${LIMITS.demand} 字` };
+  }
+
+  if (input.remark.length > LIMITS.remark) {
+    return { ok: false, message: `备注：选填，不超过 ${LIMITS.remark} 字` };
+  }
+
   if (!STATUSES.includes(input.status as never)) {
     return { ok: false, message: `状态：只能是「${STATUSES.join("、")}」之一` };
   }
 
   return { ok: true, message: "" };
 }
-
-/* ─────────────────── 客户档案 ─────────────────── */
 
 /** 客户档案各字段的长度上限（与数据库 CHECK 约束一致） */
 export const PROFILE_LIMITS = {

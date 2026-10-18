@@ -36,30 +36,30 @@
       <div class="card">
         <div class="head">
           <div>
-            <h2><%= customer.customerName %></h2>
-            <div class="no">需求编号 #<%= customer.id %></div>
+            <h2><%= demand.companyName %></h2>
+            <div class="no">需求编号 #<%= demand.id %></div>
           </div>
-          <span class="tag"><%= customer.status %></span>
+          <span class="tag"><%= demand.status %></span>
         </div>
 
         <hr class="sep" />
 
         <dl>
-          <dt>客户名</dt><dd><%= customer.customerName %></dd>
-          <dt>联系人</dt><dd><%= customer.contactName %></dd>
-          <dt>手机</dt><dd><%= customer.phone %></dd>
-          <dt>需求描述</dt><dd class="demand"><%= customer.demand %></dd>
-          <dt>备注</dt><dd class="demand"><% if (customer.remark) { %><%= customer.remark %><% } else { %><span class="no">—</span><% } %></dd>
-          <dt>登记时间</dt><dd><%= customer.createdAt.toISOString().slice(0, 19).replace("T", " ") %></dd>
+          <dt>客户</dt><dd><a href="/profiles/<%= demand.profileId %>" style="color:#2563eb;text-decoration:none;"><%= demand.companyName %></a></dd>
+          <dt>联系人</dt><dd><%= demand.contactName %></dd>
+          <dt>手机</dt><dd><%= demand.phone %></dd>
+          <dt>需求描述</dt><dd class="demand"><%= demand.demand %></dd>
+          <dt>备注</dt><dd class="demand"><% if (demand.remark) { %><%= demand.remark %><% } else { %><span class="no">—</span><% } %></dd>
+          <dt>登记时间</dt><dd><%= demand.createdAt.toISOString().slice(0, 19).replace("T", " ") %></dd>
         </dl>
 
         <hr class="sep" />
 
         <div class="actions">
-          <a class="btn btn-primary" href="/customers/<%= customer.id %>/edit">编辑</a>
+          <a class="btn btn-primary" href="/demands/<%= demand.id %>/edit">编辑</a>
           <a class="btn btn-ghost" href="/">返回列表</a>
 
-          <form method="post" action="/customers/<%= customer.id %>/delete">
+          <form method="post" action="/demands/<%= demand.id %>/delete">
             <button
               type="submit"
               class="btn btn-danger"

@@ -13,7 +13,7 @@ import * as profile from "./commands/profile";
 import { fail, heading } from "./format";
 
 const MODULES: Record<string, { run: (argv: string[]) => Promise<number>; desc: string }> = {
-  demand: { run: demand.run, desc: "需求登记" },
+  demand: { run: demand.run, desc: "需求登记（挂在客户档案下）" },
   profile: { run: profile.run, desc: "客户档案" },
 };
 
@@ -25,7 +25,7 @@ const HELP = `
   bun run cli --help
 
 模块
-  demand              需求登记（客户名/联系人/手机/需求描述/状态/备注）
+  demand              需求登记（必须挂在客户档案下）
   profile             客户档案（公司/联系人/职位/手机/邮箱/行业/来源/地址/备注）
 
 命令
@@ -35,6 +35,7 @@ const HELP = `
   update <id>         修改（只改显式传入的字段）
   remove <id...>      删除，支持批量；加 --force 跳过确认
   export              导出 CSV，默认打到 stdout，用 -o 文件名 写文件
+  profiles            （仅 demand）列出可选的客户档案 id
 
 通用选项
   --json              以 JSON 输出，便于脚本处理
@@ -69,9 +70,7 @@ const HELP = `
 /** 参数说明表 */
 const FIELD_HELP: Record<string, [string, string][]> = {
   demand: [
-    ["--customer", "客户名"],
-    ["--contact", "联系人"],
-    ["--phone", "手机（11 位）"],
+    ["--profile", "客户档案 ID（必填，用 demand profiles 查看）"],
     ["--demand", "需求描述"],
     ["--status", "状态：待跟进/沟通中/已报价/已成交/已流失"],
     ["--remark", "备注"],

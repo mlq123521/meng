@@ -50,3 +50,8 @@ export function isUniqueViolation(err: unknown): boolean {
 export function isCheckViolation(err: unknown): boolean {
   return pgErrorCode(err) === "23514";
 }
+
+/** 是否是外键冲突（引用了不存在的记录，或还有子记录不让删） */
+export function isForeignKeyViolation(err: unknown): boolean {
+  return pgErrorCode(err) === "23503";
+}

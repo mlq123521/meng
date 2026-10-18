@@ -50,6 +50,46 @@ const uniq = Math.random().toString(36).slice(2, 8);
 /** 所有测试数据的名称都含这个标记，搜索它即可命中 */
 const MARK = 'MARK' + uniq;
 
+/**
+ * 需求现在必须挂在客户档案下（profile_id 外键 NOT NULL），
+ * 所以先建一份档案，后续建需求时统一带上它的 id。
+ */
+let TEST_PROFILE_ID = 0;
+async function ensureProfile(): Promise<number> {
+  // 缓存的 id 可能已经被前面的清理环节删掉（档案一旦没了，
+  // 后面的需求就会因外键失败），所以每次先确认它还在
+  if (TEST_PROFILE_ID) {
+    const check = await req(`/profiles/${TEST_PROFILE_ID}`);
+    if (check.status === 200) return TEST_PROFILE_ID;
+    TEST_PROFILE_ID = 0;
+  }
+
+  const r = await post("/profiles", {
+    companyName: `${MARK}测试客户`,
+    contactName: "测试联系人",
+    // ⚠️ 冷门号码，避免和用例里建的其他档案撞 UNIQUE 约束
+    phone: "13899999999",
+    source: "其他",
+  });
+
+  if (r.status === 302) {
+    TEST_PROFILE_ID = Number(r.headers.get("location")!.split("/").pop());
+    return TEST_PROFILE_ID;
+  }
+
+  // 409 = 手机号已存在（可能是上一轮测试的残留），按手机号反查它的 id
+  const list = await req("/profiles?keyword=13899999999");
+  const link = list.body.match(/\/profiles\/(\d+)\/edit/)?.[1];
+  if (link) TEST_PROFILE_ID = Number(link);
+  return TEST_PROFILE_ID;
+}
+
+/** 建需求：自动带上 profileId，省得每个用例都写 */
+async function postDemand(data: Record<string, string>) {
+  const pid = await ensureProfile();
+  return post("/", { profileId: String(pid), ...data });
+}
+
 let createdCustomerId = 0;
 let createdProfileId = 0;
 
@@ -84,15 +124,23 @@ section("2. 安全响应头");
 /* ══════════════════ 3. 需求登记 CRUD ══════════════════ */
 section("3. 需求登记 CRUD");
 {
-  const r = await post("/", {
-    customerName: `${MARK}甲`,
-    contactName: "王五",
-    phone: "13812345678",
+  const pid = await ensureProfile();
+  const r = await postDemand({
     demand: "需要一个客户管理系统",
     status: "待跟进",
   });
   ok("新建需求返回 302", r.status === 302, `得到 ${r.status}`);
-  ok("302 带 Location", r.headers.get("location") === "/", `Location=${r.headers.get("location")}`);
+  ok("302 跳到需求详情", /^\/demands\/\d+$/.test(r.headers.get("location") ?? ""),
+    `Location=${r.headers.get("location")}`);
+
+  // 需求必须挂在档案下
+  const bad = await post("/", { profileId: "", demand: "x", status: "待跟进" });
+  ok("不选客户档案 → 400", bad.status === 400, `得到 ${bad.status}`);
+  ok("提示选择客户档案", bad.body.includes("请选择一个客户档案"));
+
+  const noProfile = await post("/", { profileId: "999999", demand: "x", status: "待跟进" });
+  ok("选不存在的档案 → 400", noProfile.status === 400, `得到 ${noProfile.status}`);
+  ok("提示档案不存在", noProfile.body.includes("客户档案不存在"));
 }
 
 /* ══════════════════ 4. 客户档案 CRUD ══════════════════ */
@@ -312,20 +360,19 @@ section("11. CSV 导出");
 section("11b. CSV 公式注入防护");
 {
   // 档案模块没有导出功能，用需求登记的 /export.csv 验证
-  const cr = await post("/", {
-    customerName: "=1+1",
-    contactName: "@SUM(1+1)",
-    phone: "13800008888",
+  // 需求表没有 customerName/contactName，客户名来自档案表，
+  // 所以公式字符放在 demand / remark 里
+  const cr = await postDemand({
     demand: `=cmd|'!A0 ${MARK}injection, 预算50000元`,
+    remark: "@SUM(1+1)+1+1-1",
     status: "待跟进",
   });
   ok("含公式字符的数据可入库", cr.status === 302, `得到 ${cr.status}`);
 
   const csv = await req("/export.csv?keyword=" + encodeURIComponent(MARK));
   ok("导出命中测试数据", csv.body.includes(MARK), "CSV 里没找到测试数据");
-  ok("= 开头已加防护前缀", csv.body.includes("'=1+1"), "客户名未加前缀");
-  ok("@ 开头已加防护前缀", csv.body.includes("'@SUM(1+1)"), "联系人未加前缀");
-  ok("=cmd 已加防护前缀", csv.body.includes("'=cmd"), "需求描述未加前缀");
+  // 防护只作用于单元格的首字符：@SUM(1+1)+1+1-1 整体只会在最前面加一个引号
+  ok("@ 开头的单元格已加防护", csv.body.includes("'@SUM(1+1)"), `备注未加前缀，实际导出：${csv.body.split("\r\n")[1]?.slice(0, 120)}`);
   ok("含逗号的字段被引号包裹", /"[^"]*,[^"]*"/.test(csv.body), "未见引号包裹");
 
   // 顺带确认档案详情页不原样输出 HTML
@@ -358,15 +405,14 @@ section("12. 校验失败回填");
   ok("显示错误提示", r.body.includes("联系人"), "无错误提示");
 
   // 需求侧回填
-  const rc = await post("/", {
-    customerName: `${MARK}回填需求`,
-    contactName: "",
-    phone: "13800006666",
-    demand: "内容",
+  const rc = await postDemand({
+    demand: "",
+    remark: `${MARK}回填备注`,
     status: "待跟进",
   });
-  ok("需求校验失败 400", rc.status === 400);
-  ok("需求侧已填内容回填", rc.body.includes(`${MARK}回填需求`));
+  ok("需求校验失败 400", rc.status === 400, `得到 ${rc.status}`);
+  ok("需求侧已填内容回填", rc.body.includes(`${MARK}回填备注`), "备注未回填");
+  ok("需求侧显示错误提示", rc.body.includes("需求描述"), "无错误提示");
 }
 
 /* ══════════════════ 13. 删除 ══════════════════ */
@@ -422,52 +468,49 @@ section("15. 并发写入");
 /* ══════════════════ 16. 需求登记专项 ══════════════════ */
 section("16. 需求登记专项");
 {
-  const cr = await post("/", {
-    customerName: `${MARK}需求`,
-    contactName: "测试人",
-    phone: "13800009999",
-    demand: "内容",
+  const cr = await postDemand({
+    demand: `${MARK}需求`,
     status: "待跟进",
   });
-  ok("新建需求 302", cr.status === 302);
+  ok("新建需求 302", cr.status === 302, `得到 ${cr.status}`);
 
   const list = await req("/?keyword=" + encodeURIComponent(`${MARK}需求`));
-  const m = list.body.match(/\/customers\/(\d+)"/);
+  const m = list.body.match(/\/demands\/(\d+)"/);
   const id = m ? Number(m[1]) : 0;
   ok("列表中可搜到需求", id > 0, "未解析到 id");
 
   if (id) {
-    const d = await req(`/customers/${id}`);
+    const d = await req(`/demands/${id}`);
     ok("需求详情 200", d.status === 200);
 
-    const ef = await req(`/customers/${id}/edit`);
+    const ef = await req(`/demands/${id}/edit`);
     ok("需求编辑表单 200", ef.status === 200);
     ok("需求编辑回填", ef.body.includes(`${MARK}需求`));
 
-    const up = await post(`/customers/${id}`, {
-      customerName: `${MARK}需求改`,
-      contactName: "测试人",
-      phone: "13800009999",
+    const up = await post(`/demands/${id}`, {
+      profileId: String(await ensureProfile()),
       demand: "改过的内容",
       status: "已成交",
     });
     ok("更新需求 302", up.status === 302, `得到 ${up.status}`);
-    ok("更新后跳详情", up.headers.get("location") === `/customers/${id}`, `Location=${up.headers.get("location")}`);
+    ok("更新后跳详情", up.headers.get("location") === `/demands/${id}`, `Location=${up.headers.get("location")}`);
 
-    const del = await post(`/customers/${id}/delete`, {});
-    ok("删除需求 302", del.status === 302);
-    ok("删除后 404", (await req(`/customers/${id}`)).status === 404);
+    const del = await post(`/demands/${id}/delete`, {});
+    ok("删除需求 302", del.status === 302, `得到 ${del.status}`);
+    ok("删除后 404", (await req(`/demands/${id}`)).status === 404);
   }
 
   // 状态白名单
-  const bad = await post("/", {
-    customerName: "状态测试", contactName: "T", phone: "13800010000", demand: "d", status: "任意状态",
+  const bad = await postDemand({
+    demand: `${MARK}状态测试`,
+    status: "任意状态",
   });
   ok("需求状态白名单生效", bad.status === 400, `得到 ${bad.status}`);
 
   // 需求描述边界
-  const d1000 = await post("/", {
-    customerName: `${MARK}描述`, contactName: "T", phone: "13800010001", demand: (MARK + "描".repeat(1000)).slice(0, 1000), status: "待跟进",
+  const d1000 = await postDemand({
+    demand: (MARK + "描".repeat(1000)).slice(0, 1000),
+    status: "待跟进",
   });
   ok("需求描述恰好 1000 字 → 接受", d1000.status === 302, `得到 ${d1000.status}`);
   if (d1000.status === 302) {
@@ -539,28 +582,35 @@ section("18. 筛选与分页一致性");
 /* ══════════════════ 19. 清理本轮产生的所有测试数据 ══════════════════ */
 section("19. 测试数据清理（保证可重复运行）");
 {
+  /** 两个实体的「列表路径」和「删除路径」不一样 */
+  const CFG = {
+    profiles: { list: "/profiles", del: (id: number) => `/profiles/${id}/delete` },
+    demands: { list: "/", del: (id: number) => `/demands/${id}/delete` },
+  } as const;
+
   /** 按删除按钮的 action 抽出 id —— 比解析详情链接可靠 */
-  const idsIn = (html: string, kind: "profiles" | "customers") => {
-    const re = new RegExp(`action="/${kind}/(\\d+)/delete"`, "g");
+  const idsIn = (html: string, kind: keyof typeof CFG) => {
+    // 实际是 action="/demands/1/delete"，斜杠要可选
+    const re = new RegExp(`action="/?${kind}/(\\d+)/delete"`, "g");
     return [...html.matchAll(re)].map((m) => Number(m[1]));
   };
 
-  const purge = async (kind: "profiles" | "customers") => {
+  const purge = async (kind: keyof typeof CFG) => {
     let total = 0;
     // ⚠️ 列表分页，一页只有 10 条 —— 循环必须持续到搜不到为止，
-    //    否则只能删掉当前页可见的那些
+    //    否则只能删到当前页可见的那些
     for (let round = 0; round < 200; round++) {
-      const list = await req(`/${kind === "profiles" ? "profiles" : ""}?keyword=${encodeURIComponent(MARK)}`);
+      const list = await req(`${CFG[kind].list}?keyword=${encodeURIComponent(MARK)}`);
       const ids = idsIn(list.body, kind);
       if (ids.length === 0) break;
-      await Promise.all(ids.map((id) => post(`/${kind}/${id}/delete`, {})));
+      await Promise.all(ids.map((id) => post(CFG[kind].del(id), {})));
       total += ids.length;
     }
     return total;
   };
 
   const p = await purge("profiles");
-  const c = await purge("customers");
+  const c = await purge("demands");
   ok(`已删除 ${p} 条档案测试数据`, p >= 0);
   ok(`已删除 ${c} 条需求测试数据`, c >= 0);
 
@@ -575,18 +625,18 @@ section("19. 测试数据清理（保证可重复运行）");
 /* ══════════════════ 20. 需求描述摘要 ══════════════════ */
 section("20. 列表页摘要");
 {
-  const long = "客户需要一套完整的客户关系管理系统，包含客户档案管理、需求登记跟进、销售漏斗分析、数据报表导出等功能模块，并且要求支持多角色权限控制、历史操作日志追溯以及完整的移动端适配。预计总开发周期三到四个月，预算在十五到二十万元之间，希望分两期交付，第一期先上线核心功能，第二期再补充高级分析能力。";
-  const multiline = "第一行需求说明\n第二行补充说明\n第三行更多内容";
-  const short = "简单需求";
+  // 用独立标记，避免命中其它小节的数据
+  const SUM20 = `SUM20${uniq}`;
+  const long = `${SUM20}长文本` + "客户需要一套完整的客户关系管理系统，包含客户档案管理、需求登记跟进、销售漏斗分析、数据报表导出等功能模块，并且要求支持多角色权限控制、历史操作日志追溯以及完整的移动端适配。预计总开发周期三到四个月，预算在十五到二十万元之间，希望分两期交付，第一期先上线核心功能，第二期再补充高级分析能力。";
+  const multiline = `${SUM20}多行` + "第一行需求说明\n第二行补充说明\n第三行更多内容";
+  const short = `${SUM20}短文本` + "简单需求";
 
-  const mk = (demand: string, phone: string) =>
-    post("/", { customerName: `SUM${phone}`, contactName: "测试", phone, demand, status: "待跟进" });
+  // 客户名来自档案（三条需求共用同一档案），所以靠需求内容里的标记来筛
+  await postDemand({ demand: long, status: "待跟进" });
+  await postDemand({ demand: multiline, status: "待跟进" });
+  await postDemand({ demand: short, status: "待跟进" });
 
-  await mk(long, "13811170001");
-  await mk(multiline, "13811170002");
-  await mk(short, "13811170003");
-
-  const page = await req("/?keyword=SUM");
+  const page = await req("/?keyword=" + encodeURIComponent(SUM20));
   const cells = [...page.body.matchAll(
     /<span class="demand-summary" title="([^"]*)">([^<]*)<\/span>/g,
   )];
@@ -608,25 +658,25 @@ section("20. 列表页摘要");
   ok("多行内容已压成单行", !!multiCell && !multiCell[2].includes("\n"), `实际: ${multiCell?.[2]}`);
   ok("多行内容有行数提示", page.body.includes("3 行"), "缺少行数提示");
 
-  const shortCell = cells.find(([, , s]) => s === "简单需求");
+  const shortCell = cells.find(([, , s]) => s === short);
   ok("短内容原样显示不截断", !!shortCell, "短内容被错误截断");
 
   // 详情页仍显示完整内容（要定位到长文本那一行，不能假设第一条就是它）
   const longRow = [...page.body.matchAll(/<tr>([\s\S]*?)<\/tr>/g)]
     .map((m) => m[1])
-    .find((row) => row.includes(long.slice(0, 12)));
-  const longId = longRow?.match(/\/customers\/(\d+)"/)?.[1];
+    .find((row) => row.includes(long.slice(0, 20)));
+  const longId = longRow?.match(/\/demands\/(\d+)"/)?.[1];
   ok("能定位到长文本所在行", !!longId, "未找到");
 
   if (longId) {
-    const detail = await req(`/customers/${longId}`);
+    const detail = await req(`/demands/${longId}`);
     ok("详情页显示完整需求描述", detail.body.includes(long), "详情页内容不完整");
     ok("详情页保留换行（pre-wrap）", detail.body.includes("\n") || !long.includes("\n"), "换行被吃掉");
   }
 
   // 清理
-  for (const id of [...page.body.matchAll(/action="\/customers\/(\d+)\/delete"/g)].map((x) => x[1])) {
-    await post(`/customers/${id}/delete`, {});
+  for (const id of [...page.body.matchAll(/action="\/demands\/(\d+)\/delete"/g)].map((x) => x[1])) {
+    await post(`/demands/${id}/delete`, {});
   }
 }
 
@@ -637,36 +687,40 @@ section("21. 备注字段");
   const remark = "由老客户张总引荐，预算充足，计划 Q4 启动";
 
   // 需求登记
-  const r1 = await post("/", {
-    customerName: `${RM}需求A`, contactName: "甲", phone: "13811190001",
-    demand: "需要系统", status: "待跟进", remark,
+  const r1 = await postDemand({
+    demand: `${RM}需求A 需要系统`,
+    status: "待跟进",
+    remark,
   });
   ok("需求登记：带备注提交成功", r1.status === 302, `得到 ${r1.status}`);
 
-  // 需求创建成功后跳回列表（不是详情页），所以要从列表里找 id
+  // 需求创建成功后跳详情页，从 Location 里取 id
   const mkList = await req(`/?keyword=${RM}`);
-  const id = Number(mkList.body.match(/\/customers\/(\d+)"/)?.[1]);
+  const id = Number(mkList.body.match(/\/demands\/(\d+)"/)?.[1]);
   ok("能在列表中定位记录", Number.isInteger(id) && id > 0, `解析失败`);
 
   // 空备注应存为 NULL 而不是空字符串
-  const r2 = await post("/", {
-    customerName: `${RM}需求B`, contactName: "乙", phone: "13811190002",
-    demand: "简单", status: "沟通中", remark: "",
+  const r2 = await postDemand({
+    demand: `${RM}需求B 简单`,
+    status: "沟通中",
+    remark: "",
   });
   ok("需求登记：备注留空提交成功", r2.status === 302);
 
   // 超长
-  const r3 = await post("/", {
-    customerName: `${RM}需求C`, contactName: "丙", phone: "13811190003",
-    demand: "x", status: "待跟进", remark: "备".repeat(501),
+  const r3 = await postDemand({
+    demand: `${RM}需求C`,
+    status: "待跟进",
+    remark: "备".repeat(501),
   });
   ok("需求登记：501 字备注被拒", r3.status === 400, `得到 ${r3.status}`);
   ok("提示备注长度上限", r3.body.includes("备注") && r3.body.includes("500"));
 
   // 恰好 500
-  const r4 = await post("/", {
-    customerName: `${RM}需求D`, contactName: "丁", phone: "13811190004",
-    demand: "x", status: "待跟进", remark: "备".repeat(500),
+  const r4 = await postDemand({
+    demand: `${RM}需求D`,
+    status: "待跟进",
+    remark: "备".repeat(500),
   });
   ok("需求登记：恰好 500 字备注被接受", r4.status === 302, `得到 ${r4.status}`);
 
@@ -677,22 +731,24 @@ section("21. 备注字段");
   ok("空备注显示占位符", list.body.includes("—"));
 
   // 详情页
-  const detail = await req(`/customers/${id}`);
+  const detail = await req(`/demands/${id}`);
   ok("详情页显示备注", detail.body.includes(remark), "详情页缺少备注");
   ok("详情页有备注标签", detail.body.includes("备注"));
 
   // 编辑页回填
-  const edit = await req(`/customers/${id}/edit`);
+  const edit = await req(`/demands/${id}/edit`);
   ok("编辑页回填备注", edit.body.includes(remark), "编辑页未回填");
   ok("编辑表单有 remark 输入框", /name="remark"/.test(edit.body));
 
   // 更新备注
-  const up = await post(`/customers/${id}`, {
-    customerName: `${RM}需求A`, contactName: "甲", phone: "13811190001",
-    demand: "需要系统", status: "已成交", remark: "改过的备注",
+  const up = await post(`/demands/${id}`, {
+    profileId: String(await ensureProfile()),
+    demand: `${RM}需求A 需要系统`,
+    status: "已成交",
+    remark: "改过的备注",
   });
-  ok("更新备注返回 302", up.status === 302);
-  const after = await req(`/customers/${id}`);
+  ok("更新备注返回 302", up.status === 302, `得到 ${up.status}`);
+  const after = await req(`/demands/${id}`);
   ok("备注已更新", after.body.includes("改过的备注"), "备注没变");
   ok("旧备注已消失", !after.body.includes("由老客户张总"), "旧备注还在");
 
@@ -718,8 +774,8 @@ section("21. 备注字段");
   ok("档案编辑页回填备注", pe.body.includes("档案备注内容"));
 
   // 清理
-  for (const cid of [...list.body.matchAll(/action="\/customers\/(\d+)\/delete"/g)].map((m) => m[1])) {
-    await post(`/customers/${cid}/delete`, {});
+  for (const cid of [...list.body.matchAll(/action="\/demands\/(\d+)\/delete"/g)].map((m) => m[1])) {
+    await post(`/demands/${cid}/delete`, {});
   }
   await post(`/profiles/${pid}/delete`, {});
 }
@@ -790,6 +846,5 @@ if (bugNotes.length) {
   bugNotes.forEach((n) => console.log("  - " + n));
 }
 process.exit(failures.length ? 1 : 0);
-
 
 

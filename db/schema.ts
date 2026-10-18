@@ -29,41 +29,8 @@ export type Source = (typeof SOURCES)[number];
 const sourceArray = () => sql.raw(`ARRAY[${SOURCES.map((s) => `'${s}'`).join(",")}]`);
 
 /**
- * customers 表 —— 客户需求登记
- * 左侧 = TypeScript 变量名，右侧字符串 = 数据库里的真实列名
- * 长度和状态都用 CHECK 约束在数据库层兜底，
- * 即使有人绕过应用层直接写库，也插不进脏数据
- */
-export const customers = pgTable(
-  "customers",
-  {
-    id: serial("id").primaryKey(),
-    customerName: text("customer_name").notNull(),
-    contactName: text("contact_name").notNull(),
-    phone: text("phone").notNull(),
-    demand: text("demand").notNull(),
-    status: text("status").notNull().default("待跟进"),
-    remark: text("remark"),                  // 备注（可空）
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (t) => [
-    check("customers_customer_name_len", sql`char_length(${t.customerName}) BETWEEN 1 AND 60`),
-    check("customers_contact_name_len", sql`char_length(${t.contactName}) BETWEEN 1 AND 30`),
-    check("customers_phone_format", sql`${t.phone} ~ '^1[3-9][0-9]{9}$'`),
-    check("customers_demand_len", sql`char_length(${t.demand}) BETWEEN 1 AND 1000`),
-    check("customers_remark_len", sql`${t.remark} IS NULL OR char_length(${t.remark}) <= 500`),
-    check("customers_status_valid", sql`${t.status} = ANY (${statusArray()})`),
-  ],
-);
-
-/** 查询出来的对象长这样 */
-export type Customer = typeof customers.$inferSelect;
-/** 新建时能传的对象长这样（id / createdAt 由数据库生成，不用传） */
-export type NewCustomer = typeof customers.$inferInsert;
-
-/**
- * customer_profiles 表 —— 客户档案
- * 与 customers（需求登记）是两张独立的表，目前没有外键关联。
+ * customer_profiles 表 —— 客户档案（主表）
+ * 一个客户 = 一条档案，demands 表通过外键挂在它下面。
  */
 export const customerProfiles = pgTable(
   "customer_profiles",
@@ -98,6 +65,44 @@ export const customerProfiles = pgTable(
 export type CustomerProfile = typeof customerProfiles.$inferSelect;
 /** 新建客户档案时能传的对象 */
 export type NewCustomerProfile = typeof customerProfiles.$inferInsert;
+
+/**
+ * demands 表 —— 需求登记（子表）
+ *
+ * 一个客户可以有多条需求，所以这里只存需求本身，
+ * 客户名/联系人/手机一律从 customer_profiles 取，不做冗余存储 ——
+ * 否则改一次客户名，需求列表里的旧名字不会跟着变。
+ */
+export const demands = pgTable(
+  "demands",
+  {
+    id: serial("id").primaryKey(),
+    profileId: integer("profile_id")
+      .notNull()
+      .references(() => customerProfiles.id, { onDelete: "cascade" }),
+    demand: text("demand").notNull(),
+    status: text("status").notNull().default("待跟进"),
+    remark: text("remark"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    check("demands_demand_len", sql`char_length(${t.demand}) BETWEEN 1 AND 1000`),
+    check("demands_remark_len", sql`${t.remark} IS NULL OR char_length(${t.remark}) <= 500`),
+    check("demands_status_valid", sql`${t.status} = ANY (${statusArray()})`),
+    // 按客户查需求是高频操作，建索引
+    index("demands_profile_idx").on(t.profileId),
+  ],
+);
+
+/** 查询出来的需求（含关联的客户信息，字段由 join 拼出来） */
+export type Demand = Omit<typeof demands.$inferSelect, never> & {
+  companyName: string;
+  contactName: string;
+  phone: string;
+};
+
+/** 新建需求时能传的对象（client 信息不在这里） */
+export type NewDemand = typeof demands.$inferInsert;
 
 /* ═══════════════ 导入批次（支持事后回滚） ═══════════════ */
 
