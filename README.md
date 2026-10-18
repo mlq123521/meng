@@ -266,3 +266,26 @@ bun run test:smoke     # 终端 2
 | Drizzle ORM | 纯 TS 无二进制、链式调用即 SQL、可推断类型 |
 | EJS | Express 官方示例模板，语法直观 |
 | CHECK 约束 | 数据库层兜底，防止绕过应用的脏数据 |
+
+### ⚠️ 为什么 `pg` 在 devDependencies 里
+
+应用代码**不依赖** `pg` —— 数据库连接走 Bun 内置驱动：
+
+```ts
+// db/index.ts
+import { SQL } from "bun";
+export const client = new SQL(url);   // Bun 内置
+```
+
+但 **`drizzle-kit`（`bun run db:push` / `db:generate`）跑在 Node 环境，不认识 Bun 的驱动**，需要 `pg` 才能连库：
+
+```
+To connect to Postgres database - please install either of 'pg', 'postgres', ...
+```
+
+所以：
+- `pg` 放在 **devDependencies** —— 只有数据库工具链用，应用运行时不需要
+- `@types/pg` 已删除 —— 代码零引用，加了也没用
+
+> 排查死依赖时要注意：**CLI 工具的依赖不在源码里**，grep `import` 是找不全的。
+> 判断标准应该是「删掉后 `bun run db:push` 和测试还能不能过」，而不是「源码有没有 import」。
