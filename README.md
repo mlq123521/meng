@@ -68,6 +68,71 @@ bun run dev   # 热重载
 | `bun run test:import` | 导入功能专项（43 项） |
 | `bun run test:atomic` | 事务原子性（18 项） |
 | `bun run test:batch` | 批次回滚 + 性能（20 项） |
+| `bun run test:cli` | CLI 工具（63 项） |
+| `bun run cli` | 命令行工具，见下文 |
+
+---
+
+## 命令行工具
+
+CLI 直连数据库，**不需要启动 Web 服务**。
+
+```bash
+bun run cli --help              # 总体帮助
+bun run cli demand --help       # 需求登记字段说明
+bun run cli profile --help      # 客户档案字段说明
+```
+
+### 模块与命令
+
+| 模块 | 说明 |
+|------|------|
+| `demand` | 需求登记 |
+| `profile` | 客户档案 |
+
+两个模块都支持：`list` / `get <id>` / `add` / `update <id>` / `remove <id...>` / `export`
+
+### 常用示例
+
+```bash
+# 列表与筛选
+bun run cli demand list
+bun run cli demand list --status 待跟进 --keyword 云启
+bun run cli demand list --page 2 --limit 20 --json
+
+# 查看 / 新增 / 修改
+bun run cli demand get 1
+bun run cli demand add --customer 杭州云启科技 --contact 王经理 \
+    --phone 13812345671 --demand 需要一套CRM系统 --remark 老客户引荐
+bun run cli demand update 1 --status 已成交     # 只改传入的字段
+
+# 批量删除（先预览，确认后加 --force）
+bun run cli demand remove 3 4 5
+bun run cli demand remove 3,4,5 --force
+
+# 导出 CSV
+bun run cli demand export -o demands.csv
+
+# 客户档案
+bun run cli profile list --source 展会
+bun run cli profile add --company 某科技 --contact 李总 --phone 13900139000 --industry 互联网
+
+# 脚本里用 JSON
+bun run cli profile list --json | jq '.list[] | select(.source=="展会")'
+```
+
+### 设计要点
+
+| 点 | 说明 |
+|----|------|
+| 复用 models/utils | 与 Web 端共用数据访问和校验逻辑，不重复实现 |
+| `--json` | 表格给人看，JSON 给脚本用 |
+| 批量删除默认需确认 | 不加 `--force` 只打印预览并以非 0 退出，避免手滑删错 |
+| 中文列宽对齐 | `cli/format.ts` 计算全角字符占 2 列，否则表格会错位 |
+| 约束错误转人话 | 唯一约束冲突输出「该手机号已被其他档案占用」而不是 Drizzle 原始异常 |
+
+> ⚠️ Windows 下 `bun run cli ... --keyword "%"` 会被 cmd.exe 拦下（`%` 是特殊字符）。
+> 这是 shell 层面的限制，需要在代码里处理这类字符时请改用脚本参数或直接调用。
 
 ---
 

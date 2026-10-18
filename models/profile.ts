@@ -161,6 +161,12 @@ export async function deleteProfile(id: number): Promise<CustomerProfile | undef
   return deleted;
 }
 
+/** 批量删除档案 */
+export async function deleteProfiles(ids: number[]): Promise<CustomerProfile[]> {
+  if (ids.length === 0) return [];
+  return db.delete(customerProfiles).where(inArray(customerProfiles.id, ids)).returning();
+}
+
 /* ────────────────────批量导入 ──────────────────── */
 
 /** 一行导入数据（已通过校验） */

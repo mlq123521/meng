@@ -1,4 +1,4 @@
-import { and, or, desc, count, eq, sql, type SQL } from "drizzle-orm";
+import { and, or, desc, count, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import {
   customers,
@@ -134,4 +134,10 @@ export async function updateCustomer(id: number, data: CustomerInput): Promise<C
 export async function deleteCustomer(id: number): Promise<Customer | undefined> {
   const [deleted] = await db.delete(customers).where(eq(customers.id, id)).returning();
   return deleted;
+}
+
+/** 批量删除，返回实际删除的记录 */
+export async function deleteCustomers(ids: number[]): Promise<Customer[]> {
+  if (ids.length === 0) return [];
+  return db.delete(customers).where(inArray(customers.id, ids)).returning();
 }
