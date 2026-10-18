@@ -24,3 +24,5 @@ Thumbs.db
 # 测试产生的临时文件
 coverage/
 *.tmp
+# 临时探测脚本
+tmp-*.ts
