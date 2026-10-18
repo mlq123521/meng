@@ -8,7 +8,9 @@
     "start": "bun run index.ts",
     "dev": "bun --watch index.ts",
     "cli": "bun run cli/index.ts",
+    "mcp": "bun run --env-file=.env mcp/server.ts",
     "test": "bun run test/smoke.ts",
+    "test:mcp": "bun run test/mcp.test.ts",
     "test:smoke": "bun run test/smoke.ts",
     "test:import": "bun run test/import.test.ts",
     "test:atomic": "bun run test/atomic.test.ts",
@@ -31,6 +33,7 @@
     "typescript": "^7"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "drizzle-orm": "^0.45.4",
     "ejs": "^7.0.1",
     "express": "^5.3.0",

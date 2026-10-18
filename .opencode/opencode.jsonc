@@ -1,0 +1,12 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "crm": {
+        "type": "local",
+        "command": ["bun", "run", "--env-file=.env", "mcp/server.ts"],
+        "cwd": "E:/mytest"
+      }
+    }
+  }
+}

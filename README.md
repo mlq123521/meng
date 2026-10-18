@@ -132,7 +132,78 @@ bun run cli profile list --json | jq '.list[] | select(.source=="展会")'
 | 约束错误转人话 | 唯一约束冲突输出「该手机号已被其他档案占用」而不是 Drizzle 原始异常 |
 
 > ⚠️ Windows 下 `bun run cli ... --keyword "%"` 会被 cmd.exe 拦下（`%` 是特殊字符）。
-> 这是 shell 层面的限制，需要在代码里处理这类字符时请改用脚本参数或直接调用。
+> 这是 shell 层面的限制。**MCP 方式没有这个问题** —— 它直接调函数，不经过 shell。
+
+---
+
+## MCP Server
+
+把数据访问能力暴露给 AI 助手（OpenCode、Claude Desktop 等任意 MCP 客户端）。
+
+```bash
+bun run mcp              # 手动启动（stdio）
+bun run test:mcp         # 66 项集成测试
+```
+
+注册到 OpenCode（已配好，见 `.opencode/opencode.jsonc`）：
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "crm": {
+        "type": "local",
+        "command": ["bun", "run", "--env-file=.env", "mcp/server.ts"],
+        "cwd": "E:/mytest"
+      }
+    }
+  }
+}
+```
+
+### 11 个工具
+
+| 模块 | 工具 | 说明 |
+|------|------|------|
+| 客户档案 | `profile_list` | 关键词 / 来源 / 行业筛选 + 分页 |
+| | `profile_get` | 详情，**含该客户名下的需求列表** |
+| | `profile_add` | 建档 |
+| | `profile_update` | 改档案，只传要改的字段 |
+| | `profile_delete` | 删档案（两段式确认） |
+| | `profile_pick` | 轻量查询，只返回 id/公司/联系人/手机 |
+| 需求登记 | `demand_list` | 关键词 / 状态 / 客户筛选 + 分页 |
+| | `demand_get` | 详情，含客户信息 |
+| | `demand_add` | 登记需求，`profileId` 必填 |
+| | `demand_update` | 改需求，只传要改的字段 |
+| | `demand_delete` | 删需求（两段式确认） |
+
+### 设计要点
+
+| 点 | 说明 |
+|----|------|
+| 直接 import models | **不经过 shell** —— 中文参数、引号、`%` 都不会被 PowerShell/cmd 拦下，也不用拼命令行字符串 |
+| 双层校验 | zod schema 在协议层拦一次，`utils/validate.ts` 在业务层再拦一次 |
+| 错误翻译成中文 | 23505 → 「手机号已存在」，23503 → 「客户档案不存在」，而不是抛原始 DB 异常 |
+| 删除两段式 | 第一次调用只返回待删清单（连同会被连带删除的需求数）；用户确认后传 `confirm=true` 才真删 |
+| stdout 只走协议 | 任何日志都写 stderr，`console.log` 会污染 JSON-RPC 帧 |
+| 复用同一套校验 | 和 Web 端、CLI 走完全相同的规则，不会出现「MCP 能过但页面提交失败」 |
+
+### 删档案时的连带影响
+
+`profile_delete` 的预览会显式告诉你会连带删掉多少条需求：
+
+```jsonc
+// 第一次调用（不带 confirm）
+{
+  "ok": false,
+  "needsConfirm": true,
+  "message": "这是预览，尚未删除。将删除 1 份档案及其名下全部需求。确认无误后，用相同的 ids 再调用一次并传 confirm=true。",
+  "targets": [
+    { "id": 4, "companyName": "杭州云启科技有限公司", "demandCount": 1 }
+  ]
+}
+```
 
 ---
 
@@ -221,24 +292,39 @@ demands（需求登记，子表，profile_id NOT NULL → customer_profiles.id O
 │  ├─ demand.ts
 │  └─ profile.ts
 │
+├─ cli/                    命令行入口（直连数据库，不依赖 Web 服务）
+│  ├─ index.ts
+│  ├─ args.ts / format.ts / errors.ts
+│  └─ commands/            demand.ts / profile.ts
+│
+├─ mcp/
+│  └─ server.ts            MCP Server：把 models/ 包装成 11 个工具
+│
 ├─ middleware/
 │  └─ errorHandler.ts      404 兜底 + 全局错误处理
 │
 ├─ utils/
 │  ├─ csv.ts               CSV 转义 + 公式注入防护
+│  ├─ csvParser.ts         RFC4180 CSV 解析
 │  ├─ like.ts              LIKE 通配符转义
 │  ├─ pgError.ts           从 SQLSTATE 判断错误类型（23503/23505/23514）
+│  ├─ text.ts              摘要 / 行数统计
 │  └─ validate.ts          字段校验规则
 │
 ├─ views/                  V —— EJS 模板
 │  ├─ partials/nav.ejs     共用导航片段
 │  ├─ demandList.ejs / demandForm.ejs / demandDetail.ejs / demandNoProfile.ejs
 │  ├─ profileList.ejs / profileForm.ejs / profileDetail.ejs
-│  ├─ customerNotFound.ejs
+│  ├─ profileImport.ejs / profileImportResult.ejs
+│  ├─ recordNotFound.ejs
 │  └─ error.ejs
 │
-└─ test/
-   └─ smoke.ts             136 项冒烟 / 边界 / 安全测试
+├─ test/                   六套测试，共 398 项断言
+│  ├─ smoke.ts / import.test.ts / atomic.test.ts
+│  ├─ batch.test.ts / cli.test.ts / mcp.test.ts
+│
+└─ .opencode/
+   └─ opencode.jsonc       注册 crm 这个 MCP server
 ```
 
 ### 请求流程
@@ -329,7 +415,7 @@ bun run dev            # 终端 1：启动服务
 bun run test:all       # 终端 2：跑全部五套测试（需服务在运行）
 ```
 
-五个套件共 **332 项断言**：
+六个套件共 **398 项断言**：
 
 | 套件 | 项数 | 覆盖 |
 |------|-----|------|
@@ -338,6 +424,7 @@ bun run test:all       # 终端 2：跑全部五套测试（需服务在运行�
 | `test/atomic.test.ts` | 18 | 导入的事务原子性与回滚 |
 | `test/batch.test.ts` | 27 | 批次记录与撤销、500 行性能、**档案↔需求的关联与级联** |
 | `test/cli.test.ts` | 65 | CLI 全命令、`--json`、批量删除的确认机制 |
+| `test/mcp.test.ts` | 66 | MCP 协议握手、工具目录、双层校验、两段式删除、跨表搜索 |
 
 测试数据自带清理逻辑，可重复运行且不留残留。
 
