@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>客户需求登记</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f5f6f8; margin: 0; color: #1f2937; }
+      .bar { background: #1f2937; color: #fff; display: flex; align-items: center; justify-content: space-between; }
+      .bar h1 { margin: 0; font-size: 18px; font-weight: 600; }
+      .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+      .card { background: #fff; border-radius: 10px; box-shadow: 0 1px 6px rgba(0,0,0,.06); overflow: hidden; margin-bottom: 16px; }
+      .filter { padding: 16px 18px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+      .filter input[type=text], .filter select { padding: 8px 11px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; font-family: inherit; }
+      .filter input[type=text] { flex: 1; min-width: 220px; }
+      .filter input:focus, .filter select:focus { outline: none; border-color: #2563eb; }
+      .btn { display: inline-block; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-size: 14px; border: none; cursor: pointer; white-space: nowrap; }
+      .btn-primary { background: #2563eb; color: #fff; }
+      .btn-ghost { background: #f3f4f6; color: #374151; }
+      .btn-sm { padding: 4px 10px; font-size: 13px; }
+      .btn-link { background: none; color: #2563eb; padding: 2px 6px; font-size: 13px; }
+      .btn-link.danger { color: #dc2626; }
+      .btn:hover { opacity: .9; }
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+      th { background: #fafafa; color: #6b7280; font-weight: 500; }
+      tr:last-child td { border-bottom: none; }
+      tr:hover td { background: #fcfcfd; }
+      .empty { text-align: center; color: #9ca3af; padding: 48px 0; }
+      .tag { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; background: #eef2ff; color: #4338ca; white-space: nowrap; }
+      .muted { color: #9ca3af; font-size: 13px; }
+      .actions-cell { white-space: nowrap; }
+      .foot { text-align: center; }
+      .pager { display: flex; justify-content: center; align-items: center; gap: 6px; padding: 16px; flex-wrap: wrap; }
+      .pager a, .pager span {
+        min-width: 32px; height: 32px; padding: 0 10px; border-radius: 6px;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 14px; text-decoration: none; color: #374151; background: #fff; border: 1px solid #e5e7eb;
+      }
+      .pager a:hover { border-color: #2563eb; color: #2563eb; }
+      .pager .current { background: #2563eb; border-color: #2563eb; color: #fff; }
+      .pager .disabled { color: #c9ccd1; background: #f9fafb; }
+      .bar .btn-ghost { background: #374151; color: #fff; }
+      .bar { padding: 0 24px; gap: 28px; height: 54px; }
+      .brand { color: #fff; text-decoration: none; font-weight: 600; font-size: 16px; }
+      .nav { display: flex; gap: 4px; flex: 1; }
+      .nav-link { color: #cbd5e1; text-decoration: none; padding: 6px 12px; border-radius: 6px; font-size: 14px; }
+      .nav-link.on { color: #fff; background: #2563eb; }
+      .actions-slot { display: flex; gap: 10px; }
+      .bar .btn { padding: 6px 12px; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <%- include("partials/nav", {
+          active: "demand",
+          actions: '<a class="btn btn-ghost" href="/export.csv">导出 CSV</a><a class="btn btn-primary" href="/new">+ 登记需求</a>',
+        }) %>
+
+    <div class="wrap">
+      <!-- 搜索 / 筛选 -->
+      <div class="card">
+        <form class="filter" method="get" action="/">
+          <input type="text" name="keyword" value="<%= keyword %>" placeholder="搜索客户名 / 联系人 / 手机 / 需求描述" />
+          <select name="status">
+            <option value="">全部状态</option>
+            <% statuses.forEach(function (s) { %>
+              <option value="<%= s %>" <%= s === status ? "selected" : "" %>><%= s %></option>
+            <% }) %>
+          </select>
+          <button type="submit" class="btn btn-primary">查询</button>
+          <a href="/" class="btn btn-ghost">重置</a>
+        </form>
+      </div>
+
+      <!-- 列表 -->
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>客户名</th>
+              <th>联系人</th>
+              <th>手机</th>
+              <th>需求描述</th>
+              <th>状态</th>
+              <th>登记时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (list.length === 0) { %>
+              <tr>
+                <td colspan="8" class="empty">
+                  <% if (keyword || status) { %>
+                    没有匹配的需求记录<br />
+                    <a href="/">清空筛选条件</a>
+                  <% } else { %>
+                    还没有需求记录<br />
+                    <a href="/new">点右上角「+ 登记需求」</a> 录入第一条
+                  <% } %>
+                </td>
+              </tr>
+            <% } %>
+
+            <% list.forEach(function (c) { %>
+              <tr>
+                <td><%= c.id %></td>
+                <td>
+                  <a href="/customers/<%= c.id %>"><strong><%= c.customerName %></strong></a>
+                </td>
+                <td><%= c.contactName %></td>
+                <td><%= c.phone %></td>
+                <td style="max-width: 220px;"><%= c.demand %></td>
+                <td><span class="tag"><%= c.status %></span></td>
+                <td class="muted"><%= c.createdAt.toISOString().slice(0, 16).replace("T", " ") %></td>
+                <td class="actions-cell">
+                  <a class="btn-link" href="/customers/<%= c.id %>">详情</a>
+                  <a class="btn-link" href="/customers/<%= c.id %>/edit">编辑</a>
+                  <form method="post" action="/customers/<%= c.id %>/delete" style="display: inline;">
+                    <button
+                      type="submit"
+                      class="btn-link danger"
+                      onclick="return confirm('确定删除「<%= c.customerName %>」这条需求吗？此操作不可恢复。')"
+                    >删除</button>
+                  </form>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="muted foot">
+        <% if (keyword || status) { %>
+          筛选出 <%= total %> 条 / 共 <%= allTotal %> 条
+        <% } else { %>
+          共 <%= total %> 条需求记录
+        <% } %>
+        <% if (totalPages > 1) { %>
+          ，第 <%= page %> / <%= totalPages %> 页
+        <% } %>
+      </p>
+
+      <!-- 分页控件 -->
+      <% if (totalPages > 1) { %>
+        <div class="pager">
+          <% if (prevLink) { %>
+            <a href="<%= prevLink %>">上一页</a>
+          <% } else { %>
+            <span class="disabled">上一页</span>
+          <% } %>
+
+          <% pages.forEach(function (p) { %>
+            <% if (p === page) { %>
+              <span class="current"><%= p %></span>
+            <% } else { %>
+              <a href="/?keyword=<%= encodeURIComponent(keyword) %>&status=<%= encodeURIComponent(status) %>&page=<%= p %>"><%= p %></a>
+            <% } %>
+          <% }) %>
+
+          <% if (nextLink) { %>
+            <a href="<%= nextLink %>">下一页</a>
+          <% } else { %>
+            <span class="disabled">下一页</span>
+          <% } %>
+        </div>
+      <% } %>
+    </div>
+  </body>
+</html>

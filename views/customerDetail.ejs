@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>需求详情</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f5f6f8; margin: 0; color: #1f2937; }
+      .bar { background: #1f2937; color: #fff; padding: 14px 28px; }
+      .bar h1 { margin: 0; font-size: 18px; font-weight: 600; }
+      .wrap { max-width: 640px; margin: 0 auto; padding: 24px 20px; }
+      .card { background: #fff; border-radius: 10px; padding: 28px 32px; box-shadow: 0 1px 6px rgba(0,0,0,.06); }
+      .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 22px; }
+      .head h2 { margin: 0; font-size: 22px; }
+      .no { color: #9ca3af; font-size: 13px; margin-top: 4px; }
+      .tag { display: inline-block; padding: 3px 12px; border-radius: 20px; font-size: 12px; background: #eef2ff; color: #4338ca; white-space: nowrap; }
+      dl { display: grid; grid-template-columns: 92px 1fr; gap: 14px 0; margin: 0; font-size: 14px; }
+      dt { color: #6b7280; }
+      dd { margin: 0; color: #111827; word-break: break-all; }
+      .demand { white-space: pre-wrap; line-height: 1.7; }
+      .sep { border: none; border-top: 1px solid #f0f0f0; margin: 22px 0; }
+      .actions { display: flex; gap: 10px; align-items: center; }
+      .btn { padding: 9px 18px; border-radius: 6px; text-decoration: none; font-size: 14px; border: none; cursor: pointer; display: inline-block; }
+      .btn-primary { background: #2563eb; color: #fff; }
+      .btn-ghost { background: #f3f4f6; color: #374151; }
+      .btn-danger { background: #dc2626; color: #fff; }
+      .btn:hover { opacity: .9; }
+      .link-muted { color: #9ca3af; text-decoration: none; font-size: 14px; margin-left: auto; }
+    </style>
+  </head>
+  <body>
+    <div class="bar"><h1>需求详情</h1></div>
+
+    <div class="wrap">
+      <div class="card">
+        <div class="head">
+          <div>
+            <h2><%= customer.customerName %></h2>
+            <div class="no">需求编号 #<%= customer.id %></div>
+          </div>
+          <span class="tag"><%= customer.status %></span>
+        </div>
+
+        <hr class="sep" />
+
+        <dl>
+          <dt>客户名</dt><dd><%= customer.customerName %></dd>
+          <dt>联系人</dt><dd><%= customer.contactName %></dd>
+          <dt>手机</dt><dd><%= customer.phone %></dd>
+          <dt>需求描述</dt><dd class="demand"><%= customer.demand %></dd>
+          <dt>登记时间</dt><dd><%= customer.createdAt.toISOString().slice(0, 19).replace("T", " ") %></dd>
+        </dl>
+
+        <hr class="sep" />
+
+        <div class="actions">
+          <a class="btn btn-primary" href="/customers/<%= customer.id %>/edit">编辑</a>
+          <a class="btn btn-ghost" href="/">返回列表</a>
+
+          <form method="post" action="/customers/<%= customer.id %>/delete">
+            <button
+              type="submit"
+              class="btn btn-danger"
+              onclick="return confirm('确定删除这条需求吗？此操作不可恢复。')"
+            >删除</button>
+          </form>
+
+          <a class="link-muted" href="/">共</a>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

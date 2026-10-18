@@ -1,0 +1,22 @@
+<%
+  /* 共用顶部导航
+     参数：
+       active  —— 当前激活的菜单项，默认 demand
+       actions —— 右侧按钮区 HTML 字符串（可选，需用未转义输出）
+     ⚠️ 本注释里不能出现 EJS 标签，否则会被当作模板代码解析 */
+  const navItems = [
+    { key: "demand",  href: "/",        label: "需求登记" },
+    { key: "profile", href: "/profiles", label: "客户档案" },
+  ];
+  const activeKey = typeof active === "undefined" ? "demand" : active;
+  const actionsHtml = typeof actions === "undefined" ? "" : actions;
+%>
+<div class="bar">
+  <a class="brand" href="/">客户管理</a>
+  <div class="nav">
+    <% navItems.forEach(function (item) { %>
+      <a class="nav-link <%= item.key === activeKey ? "on" : "" %>" href="<%= item.href %>"><%= item.label %></a>
+    <% }) %>
+  </div>
+  <div class="actions-slot"><%- actionsHtml %></div>
+</div>

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= title %></title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f5f6f8; margin: 0; color: #1f2937; }
+      .bar { background: #1f2937; color: #fff; padding: 0 24px; display: flex; align-items: center; gap: 28px; height: 54px; }
+      .brand { color: #fff; text-decoration: none; font-weight: 600; font-size: 16px; }
+      .nav { display: flex; gap: 4px; flex: 1; }
+      .nav-link { color: #cbd5e1; text-decoration: none; padding: 6px 12px; border-radius: 6px; font-size: 14px; }
+      .nav-link.on { color: #fff; background: #2563eb; }
+      .wrap { max-width: 640px; margin: 0 auto; padding: 24px 20px; }
+      .card { background: #fff; border-radius: 10px; padding: 28px 30px; box-shadow: 0 1px 6px rgba(0,0,0,.06); }
+      label { display: block; font-size: 14px; color: #374151; margin-bottom: 6px; font-weight: 500; }
+      .field { margin-bottom: 18px; }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      input, textarea, select { width: 100%; padding: 9px 11px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; font-family: inherit; background: #fff; }
+      input:focus, textarea:focus, select:focus { outline: none; border-color: #2563eb; }
+      textarea { height: 80px; resize: vertical; }
+      .error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; padding: 10px 12px; border-radius: 6px; font-size: 14px; margin-bottom: 18px; }
+      .actions { display: flex; gap: 10px; }
+      .btn { padding: 9px 18px; border-radius: 6px; text-decoration: none; font-size: 14px; border: none; cursor: pointer; display: inline-block; }
+      .btn-primary { background: #2563eb; color: #fff; }
+      .btn-ghost { background: #f3f4f6; color: #374151; }
+      .btn:hover { opacity: .9; }
+      .req { color: #dc2626; }
+      .opt { color: #9ca3af; font-weight: 400; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <%- include("partials/nav", { active: "profile" }) %>
+
+    <div class="wrap">
+      <div class="card">
+        <% if (error) { %><div class="error"><%= error %></div><% } %>
+
+        <form method="post" action="<%= action %>">
+          <div class="field">
+            <label>公司名称 <span class="req">*</span></label>
+            <input type="text" name="companyName" value="<%= values.companyName %>" placeholder="如：杭州云启科技有限公司" />
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label>联系人 <span class="req">*</span></label>
+              <input type="text" name="contactName" value="<%= values.contactName %>" placeholder="对接人姓名" />
+            </div>
+            <div class="field">
+              <label>职位 <span class="opt">选填</span></label>
+              <input type="text" name="position" value="<%= values.position %>" placeholder="如：技术总监" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label>手机 <span class="req">*</span></label>
+              <input type="text" name="phone" value="<%= values.phone %>" placeholder="11 位手机号" />
+            </div>
+            <div class="field">
+              <label>邮箱 <span class="opt">选填</span></label>
+              <input type="text" name="email" value="<%= values.email %>" placeholder="name@example.com" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label>行业 <span class="opt">选填</span></label>
+              <input type="text" name="industry" value="<%= values.industry %>" placeholder="如：互联网 / 制造业" />
+            </div>
+            <div class="field">
+              <label>来源 <span class="req">*</span></label>
+              <select name="source">
+                <% sources.forEach(function (s) { %>
+                  <option value="<%= s %>" <%= s === values.source ? "selected" : "" %>><%= s %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>通讯地址 <span class="opt">选填</span></label>
+            <input type="text" name="address" value="<%= values.address %>" placeholder="省市区 + 详细地址" />
+          </div>
+
+          <div class="field">
+            <label>备注 <span class="opt">选填</span></label>
+            <textarea name="remark" placeholder="客户背景、决策链、注意事项等"><%= values.remark %></textarea>
+          </div>
+
+          <div class="actions">
+            <button type="submit" class="btn btn-primary"><%= submitText %></button>
+            <a href="<%= values.id ? "/profiles/" + values.id : "/profiles" %>" class="btn btn-ghost">取消</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>

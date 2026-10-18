@@ -1,0 +1,32 @@
+{
+  "name": "mytest",
+  "description": "客户管理系统 —— Bun + Express + EJS + Drizzle ORM + PostgreSQL 的 MVC 分层实践项目",
+  "module": "index.ts",
+  "type": "module",
+  "private": false,
+  "scripts": {
+    "start": "bun run index.ts",
+    "dev": "bun --watch index.ts",
+    "test": "bun run test/smoke.ts",
+    "test:smoke": "bun run test/smoke.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/express": "^5.0.6",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.4",
+    "ejs": "^7.0.1",
+    "express": "^5.3.0",
+    "pg": "^8.23.1"
+  }
+}

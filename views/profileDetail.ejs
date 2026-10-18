@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>客户档案详情</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f5f6f8; margin: 0; color: #1f2937; }
+      .bar { background: #1f2937; color: #fff; padding: 0 24px; display: flex; align-items: center; gap: 28px; height: 54px; }
+      .brand { color: #fff; text-decoration: none; font-weight: 600; font-size: 16px; }
+      .nav { display: flex; gap: 4px; flex: 1; }
+      .nav-link { color: #cbd5e1; text-decoration: none; padding: 6px 12px; border-radius: 6px; font-size: 14px; }
+      .nav-link.on { color: #fff; background: #2563eb; }
+      .wrap { max-width: 700px; margin: 0 auto; padding: 24px 20px; }
+      .card { background: #fff; border-radius: 10px; padding: 28px 32px; box-shadow: 0 1px 6px rgba(0,0,0,.06); }
+      .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 22px; }
+      .head h2 { margin: 0; font-size: 22px; }
+      .no { color: #9ca3af; font-size: 13px; margin-top: 4px; }
+      .tag { display: inline-block; padding: 3px 12px; border-radius: 20px; font-size: 12px; background: #eef2ff; color: #4338ca; white-space: nowrap; }
+      dl { display: grid; grid-template-columns: 92px 1fr; gap: 14px 0; margin: 0; font-size: 14px; }
+      dt { color: #6b7280; }
+      dd { margin: 0; color: #111827; word-break: break-word; }
+      .pre { white-space: pre-wrap; line-height: 1.7; }
+      .sep { border: none; border-top: 1px solid #f0f0f0; margin: 22px 0; }
+      .actions { display: flex; gap: 10px; align-items: center; }
+      .btn { padding: 9px 18px; border-radius: 6px; text-decoration: none; font-size: 14px; border: none; cursor: pointer; display: inline-block; }
+      .btn-primary { background: #2563eb; color: #fff; }
+      .btn-ghost { background: #f3f4f6; color: #374151; }
+      .btn-danger { background: #dc2626; color: #fff; }
+      .btn:hover { opacity: .9; }
+      .note { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 12px 14px; border-radius: 8px; font-size: 13px; margin-top: 24px; line-height: 1.6; }
+    </style>
+  </head>
+  <body>
+    <%- include("partials/nav", { active: "profile" }) %>
+
+    <div class="wrap">
+      <div class="card">
+        <div class="head">
+          <div>
+            <h2><%= profile.companyName %></h2>
+            <div class="no">档案编号 #<%= profile.id %></div>
+          </div>
+          <span class="tag"><%= profile.source %></span>
+        </div>
+
+        <hr class="sep" />
+
+        <dl>
+          <dt>公司名称</dt><dd><%= profile.companyName %></dd>
+          <dt>联系人</dt><dd><%= profile.contactName %></dd>
+          <dt>职位</dt><dd><% if (profile.position) { %><%= profile.position %><% } else { %><span class="no">—</span><% } %></dd>
+          <dt>手机</dt><dd><%= profile.phone %></dd>
+          <dt>邮箱</dt><dd><% if (profile.email) { %><%= profile.email %><% } else { %><span class="no">—</span><% } %></dd>
+          <dt>行业</dt><dd><% if (profile.industry) { %><%= profile.industry %><% } else { %><span class="no">—</span><% } %></dd>
+          <dt>来源渠道</dt><dd><%= profile.source %></dd>
+          <dt>通讯地址</dt><dd><% if (profile.address) { %><%= profile.address %><% } else { %><span class="no">—</span><% } %></dd>
+          <dt>备注</dt><dd class="pre"><% if (profile.remark) { %><%= profile.remark %><% } else { %><span class="no">—</span><% } %></dd>
+          <dt>建档时间</dt><dd><%= profile.createdAt.toISOString().slice(0, 19).replace("T", " ") %></dd>
+        </dl>
+
+        <hr class="sep" />
+
+        <div class="actions">
+          <a class="btn btn-primary" href="/profiles/<%= profile.id %>/edit">编辑</a>
+          <a class="btn btn-ghost" href="/profiles">&larr; 返回档案列表</a>
+          <form method="post" action="/profiles/<%= profile.id %>/delete">
+            <button
+              type="submit"
+              class="btn btn-danger"
+              onclick="return confirm('确定删除「<%= profile.companyName %>」这份档案吗？此操作不可恢复。')"
+            >删除</button>
+          </form>
+        </div>
+
+        <div class="note">
+          当前版本「客户档案」与「需求登记」是两张独立的数据表，尚未关联。
+          后续可扩展为：一个客户对应多条需求，档案详情页内嵌该客户的需求列表。
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
