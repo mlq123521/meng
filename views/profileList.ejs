@@ -49,7 +49,8 @@
   <body>
     <%- include("partials/nav", {
       active: "profile",
-      actions: '<a class="btn btn-ghost" href="' + exportLink + '">导出 CSV</a>'
+      actions: '<a class="btn btn-ghost" href="/profiles/import">批量导入</a>'
+        + '<a class="btn btn-ghost" href="' + exportLink + '">导出 CSV</a>'
         + '<a class="btn btn-primary" href="/profiles/new">+ 新建档案</a>',
     }) %>
 

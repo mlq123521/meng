@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>导入结果</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f5f6f8; margin: 0; color: #1f2937; }
+      .bar { background: #1f2937; color: #fff; padding: 0 24px; display: flex; align-items: center; gap: 28px; height: 54px; }
+      .brand { color: #fff; text-decoration: none; font-weight: 600; font-size: 16px; }
+      .nav { display: flex; gap: 4px; flex: 1; }
+      .nav-link { color: #cbd5e1; text-decoration: none; padding: 6px 12px; border-radius: 6px; font-size: 14px; }
+      .nav-link.on { color: #fff; background: #2563eb; }
+      .wrap { max-width: 860px; margin: 0 auto; padding: 24px 20px; }
+      .card { background: #fff; border-radius: 10px; padding: 24px 28px; box-shadow: 0 1px 6px rgba(0,0,0,.06); margin-bottom: 16px; }
+      h2 { margin: 0 0 16px; font-size: 17px; }
+      .stats { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+      .stat { flex: 1; min-width: 120px; padding: 16px 18px; border-radius: 10px; background: #fafafa; border: 1px solid #f0f0f0; }
+      .stat .n { font-size: 26px; font-weight: 700; line-height: 1; }
+      .stat .l { font-size: 13px; color: #6b7280; margin-top: 6px; }
+      .stat.ok  .n { color: #16a34a; }
+      .stat.upd .n { color: #2563eb; }
+      .stat.err .n { color: #dc2626; }
+      .alert { padding: 11px 14px; border-radius: 6px; font-size: 14px; margin-bottom: 16px; }
+      .alert-ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+      th { background: #fafafa; color: #6b7280; font-weight: 500; }
+      .btn { display: inline-block; padding: 9px 18px; border-radius: 6px; text-decoration: none; font-size: 14px; border: none; cursor: pointer; }
+      .btn-primary { background: #2563eb; color: #fff; }
+      .btn-ghost { background: #f3f4f6; color: #374151; }
+      .btn-danger { background: #dc2626; color: #fff; }
+      .btn:hover { opacity: .9; }
+      .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      .muted { color: #9ca3af; font-size: 13px; }
+      .file { color: #6b7280; font-size: 13px; margin-bottom: 14px; }
+    </style>
+  </head>
+  <body>
+    <%- include("partials/nav", { active: "profile" }) %>
+
+    <div class="wrap">
+      <div class="card">
+        <h2>导入完成</h2>
+        <div class="file">文件：<%= fileName %></div>
+
+        <div class="stats">
+          <div class="stat"><div class="n"><%= total %></div><div class="l">总行数</div></div>
+          <div class="stat ok"><div class="n"><%= inserted.length %></div><div class="l">新增</div></div>
+          <div class="stat upd"><div class="n"><%= updated.length %></div><div class="l">更新</div></div>
+          <div class="stat err"><div class="n"><%= failed.length %></div><div class="l">失败</div></div>
+        </div>
+
+        <% if (failed.length === 0 && inserted.length + updated.length > 0) { %>
+          <div class="alert alert-ok">全部行导入成功，没有错误。</div>
+        <% } %>
+
+        <div class="actions">
+          <a class="btn btn-primary" href="/profiles">返回档案列表</a>
+          <a class="btn btn-ghost" href="/profiles/import">继续导入</a>
+          <form method="post" action="/profiles/import/rollback"
+                onsubmit="return confirm('确定撤销本次导入吗？\n将删除本次新增的记录，并把被更新的记录还原为导入前的内容。')">
+            <input type="hidden" name="token" value="<%= rollbackToken %>" />
+            <button type="submit" class="btn btn-danger">撤销本次导入</button>
+          </form>
+        </div>
+
+        <p class="muted" style="margin-top:14px;">
+          ⚠️ 撤销只在当前页面有效 —— 关掉页面后再想撤销，请到数据库手动处理。
+        </p>
+      </div>
+
+      <% if (failed.length > 0) { %>
+        <div class="card">
+          <h2>失败行明细（<%= failed.length %> 行）</h2>
+          <table>
+            <thead>
+              <tr><th style="width:70px;">行号</th><th style="width:280px;">原因</th><th>数据</th></tr>
+            </thead>
+            <tbody>
+              <% failed.forEach(function (f) { %>
+                <tr>
+                  <td><%= f.line %></td>
+                  <td><%= f.reason %></td>
+                  <td class="muted"><%= f.data %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+
+      <% if (inserted.length > 0) { %>
+        <div class="card">
+          <h2>新增的记录</h2>
+          <table>
+            <thead><tr><th style="width:60px;">ID</th><th>公司名称</th><th>联系人</th><th>手机</th><th>来源</th></tr></thead>
+            <tbody>
+              <% inserted.forEach(function (p) { %>
+                <tr>
+                  <td><a href="/profiles/<%= p.id %>"><%= p.id %></a></td>
+                  <td><%= p.companyName %></td>
+                  <td><%= p.contactName %></td>
+                  <td><%= p.phone %></td>
+                  <td><%= p.source %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+
+      <% if (updated.length > 0) { %>
+        <div class="card">
+          <h2>被更新的记录（按手机号匹配）</h2>
+          <table>
+            <thead><tr><th style="width:60px;">ID</th><th>公司名称</th><th>联系人</th><th>手机</th><th>来源</th></tr></thead>
+            <tbody>
+              <% updated.forEach(function (p) { %>
+                <tr>
+                  <td><a href="/profiles/<%= p.id %>"><%= p.id %></a></td>
+                  <td><%= p.companyName %></td>
+                  <td><%= p.contactName %></td>
+                  <td><%= p.phone %></td>
+                  <td><%= p.source %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </div>
+  </body>
+</html>

@@ -545,7 +545,9 @@ section("19. 测试数据清理（保证可重复运行）");
 
   const purge = async (kind: "profiles" | "customers") => {
     let total = 0;
-    for (let round = 0; round < 20; round++) {
+    // ⚠️ 列表分页，一页只有 10 条 —— 循环必须持续到搜不到为止，
+    //    否则只能删掉当前页可见的那些
+    for (let round = 0; round < 200; round++) {
       const list = await req(`/${kind === "profiles" ? "profiles" : ""}?keyword=${encodeURIComponent(MARK)}`);
       const ids = idsIn(list.body, kind);
       if (ids.length === 0) break;

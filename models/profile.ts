@@ -1,4 +1,4 @@
-import { and, or, desc, count, eq, sql, type SQL } from "drizzle-orm";
+import { and, or, desc, count, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import {
   customerProfiles,
@@ -156,4 +156,96 @@ export async function deleteProfile(id: number): Promise<CustomerProfile | undef
     .where(eq(customerProfiles.id, id))
     .returning();
   return deleted;
+}
+
+/* ────────────────────批量导入 ──────────────────── */
+
+/** 一行导入数据（已通过校验） */
+export interface ProfileRow {
+  companyName: string;
+  contactName: string;
+  position: string | null;
+  phone: string;
+  email: string | null;
+  industry: string | null;
+  source: string;
+  address: string | null;
+  remark: string | null;
+}
+
+/** 批量导入结果 */
+export interface ImportOutcome {
+  inserted: CustomerProfile[];
+  updated: CustomerProfile[];
+  /** 更新前的原始记录 —— 回滚时用它还原，绝不能取更新后的值 */
+  backup: CustomerProfile[];
+}
+
+/** 查库里已存在的手机号 → 记录 */
+async function findByPhones(phones: string[]): Promise<Map<string, CustomerProfile>> {
+  const rows = await db
+    .select()
+    .from(customerProfiles)
+    .where(inArray(customerProfiles.phone, phones));
+  return new Map(rows.map((r) => [r.phone, r]));
+}
+
+/**
+ * 按手机号判断：存在则更新，不存在则新增
+ *
+ * 整个过程包在一个事务里：
+ * 中途任何一条失败，整批回滚，不会留下「导了一半」的数据。
+ * 返回 backup（更新前的原始记录）供一键回滚使用。
+ */
+export async function importProfiles(rows: ProfileRow[]): Promise<ImportOutcome> {
+  if (rows.length === 0) return { inserted: [], updated: [], backup: [] };
+
+  return db.transaction(async (tx) => {
+    const phones = rows.map((r) => r.phone);
+    const existingRows = await tx
+      .select()
+      .from(customerProfiles)
+      .where(inArray(customerProfiles.phone, phones));
+    const existing = new Map(existingRows.map((r) => [r.phone, r]));
+
+    const toInsert = rows.filter((r) => !existing.has(r.phone));
+    const toUpdate = rows.filter((r) => existing.has(r.phone));
+
+    let inserted: CustomerProfile[] = [];
+    if (toInsert.length) {
+      inserted = await tx.insert(customerProfiles).values(toInsert).returning();
+    }
+
+    let updated: CustomerProfile[] = [];
+    for (const row of toUpdate) {
+      const old = existing.get(row.phone)!;
+      const [u] = await tx
+        .update(customerProfiles)
+        .set(row)
+        .where(eq(customerProfiles.id, old.id))
+        .returning();
+      if (u) updated.push(u);
+    }
+
+    // ⚠️ 必须留存【更新前】的值 —— existingRows 是更新前的快照
+    const backup = toUpdate.map((r) => existing.get(r.phone)!).filter(Boolean);
+
+    return { inserted, updated, backup };
+  });
+}
+
+/** 批量删除指定 id（用于导入回滚） */
+export async function deleteProfilesByIds(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const rows = await db
+    .delete(customerProfiles)
+    .where(inArray(customerProfiles.id, ids))
+    .returning({ id: customerProfiles.id });
+  return rows.length;
+}
+
+/** 查询指定 id 列表（回滚前先记录原始值） */
+export async function getProfilesByIds(ids: number[]): Promise<CustomerProfile[]> {
+  if (ids.length === 0) return [];
+  return db.select().from(customerProfiles).where(inArray(customerProfiles.id, ids));
 }
