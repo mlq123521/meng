@@ -32,6 +32,17 @@
       .muted { color: #9ca3af; font-size: 13px; }
       .actions-cell { white-space: nowrap; }
       .foot { text-align: center; }
+      /* 需求描述：单行省略，超长不影响表格行高 */
+      .demand-cell { max-width: 260px; }
+      .demand-summary {
+        display: block;
+        max-width: 260px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: help;
+      }
+      .line-hint { color: #c9ccd1; font-size: 11px; }
       .pager { display: flex; justify-content: center; align-items: center; gap: 6px; padding: 16px; flex-wrap: wrap; }
       .pager a, .pager span {
         min-width: 32px; height: 32px; padding: 0 10px; border-radius: 6px;
@@ -111,7 +122,13 @@
                 </td>
                 <td><%= c.contactName %></td>
                 <td><%= c.phone %></td>
-                <td style="max-width: 220px;"><%= c.demand %></td>
+                <td class="demand-cell">
+                  <!-- 摘要：单行显示，超出部分截断；鼠标悬停看全文 -->
+                  <span class="demand-summary" title="<%= c.demand %>"><%= c.demandSummary %></span>
+                  <% if (c.demandLines > 1) { %>
+                    <span class="line-hint"><%= c.demandLines %> 行</span>
+                  <% } %>
+                </td>
                 <td><span class="tag"><%= c.status %></span></td>
                 <td class="muted"><%= c.createdAt.toISOString().slice(0, 16).replace("T", " ") %></td>
                 <td class="actions-cell">

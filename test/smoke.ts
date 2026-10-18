@@ -572,7 +572,65 @@ section("19. 测试数据清理（保证可重复运行）");
   ok("需求表无测试残留", nc && Number(nc[1]) === 0, `残留 ${nc?.[1]}`);
 }
 
-/* ══════════════════ 20. 档案 CSV 导出 ══════════════════ */
+/* ══════════════════ 20. 需求描述摘要 ══════════════════ */
+section("20. 列表页摘要");
+{
+  const long = "客户需要一套完整的客户关系管理系统，包含客户档案管理、需求登记跟进、销售漏斗分析、数据报表导出等功能模块，并且要求支持多角色权限控制、历史操作日志追溯以及完整的移动端适配。预计总开发周期三到四个月，预算在十五到二十万元之间，希望分两期交付，第一期先上线核心功能，第二期再补充高级分析能力。";
+  const multiline = "第一行需求说明\n第二行补充说明\n第三行更多内容";
+  const short = "简单需求";
+
+  const mk = (demand: string, phone: string) =>
+    post("/", { customerName: `SUM${phone}`, contactName: "测试", phone, demand, status: "待跟进" });
+
+  await mk(long, "13811170001");
+  await mk(multiline, "13811170002");
+  await mk(short, "13811170003");
+
+  const page = await req("/?keyword=SUM");
+  const cells = [...page.body.matchAll(
+    /<span class="demand-summary" title="([^"]*)">([^<]*)<\/span>/g,
+  )];
+
+  ok("三个摘要单元格都渲染了", cells.length === 3, `实际 ${cells.length}`);
+
+  for (const [, full, shown] of cells) {
+    ok("摘要不超过 37 字符（含省略号）", shown.length <= 37, `实际 ${shown.length}: ${shown}`);
+    ok("超长内容已加省略号", shown.endsWith("…") || shown.length <= 36, `实际: ${shown}`);
+    ok("title 属性保留了全文", full.length >= shown.length, "title 比显示内容还短");
+  }
+
+  const longCell = cells.find(([, f]) => f.length > 100);
+  ok("长文本被截断", !!longCell && longCell[2].length < longCell[1].length,
+    `显示 ${longCell?.[2].length} / 原文 ${longCell?.[1].length}`);
+  ok("长文本不含换行", !longCell?.[2].includes("\n"), "摘要里还有换行");
+
+  const multiCell = cells.find(([, f]) => f.includes("\n"));
+  ok("多行内容已压成单行", !!multiCell && !multiCell[2].includes("\n"), `实际: ${multiCell?.[2]}`);
+  ok("多行内容有行数提示", page.body.includes("3 行"), "缺少行数提示");
+
+  const shortCell = cells.find(([, , s]) => s === "简单需求");
+  ok("短内容原样显示不截断", !!shortCell, "短内容被错误截断");
+
+  // 详情页仍显示完整内容（要定位到长文本那一行，不能假设第一条就是它）
+  const longRow = [...page.body.matchAll(/<tr>([\s\S]*?)<\/tr>/g)]
+    .map((m) => m[1])
+    .find((row) => row.includes(long.slice(0, 12)));
+  const longId = longRow?.match(/\/customers\/(\d+)"/)?.[1];
+  ok("能定位到长文本所在行", !!longId, "未找到");
+
+  if (longId) {
+    const detail = await req(`/customers/${longId}`);
+    ok("详情页显示完整需求描述", detail.body.includes(long), "详情页内容不完整");
+    ok("详情页保留换行（pre-wrap）", detail.body.includes("\n") || !long.includes("\n"), "换行被吃掉");
+  }
+
+  // 清理
+  for (const id of [...page.body.matchAll(/action="\/customers\/(\d+)\/delete"/g)].map((x) => x[1])) {
+    await post(`/customers/${id}/delete`, {});
+  }
+}
+
+/* ══════════════════ 21. 档案 CSV 导出 ══════════════════ */
 section("20. 档案 CSV 导出");
 {
   // 建 2 条可识别数据

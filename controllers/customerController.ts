@@ -10,6 +10,7 @@ import {
   type CustomerInput,
 } from "../models/customer";
 import { STATUSES } from "../db/schema";
+import { oneLine, countLines } from "../utils/text";
 import { validateCustomer } from "../utils/validate";
 import { toCsv, csvHeaders } from "../utils/csv";
 
@@ -48,6 +49,9 @@ function parseId(raw: string): number | null {
 
 /* ────────────────────────── 查询（列表） ────────────────────────── */
 
+/** 列表页需求描述的摘要长度 */
+const DEMAND_SUMMARY_LEN = 36;
+
 /** 构造分页链接：保留筛选条件，只换 page */
 export function pageLink(base: string, page: number, keyword: string, status: string): string {
   const p = new URLSearchParams();
@@ -69,8 +73,17 @@ export async function list(req: Request, res: Response): Promise<void> {
   const pages: number[] = [];
   for (let p = 1; p <= data.totalPages; p++) pages.push(p);
 
+  // 需求描述在列表页只显示摘要，完整内容去详情页看
+  const list = data.list.map((c) => ({
+    ...c,
+    demandSummary: oneLine(c.demand, DEMAND_SUMMARY_LEN),
+    demandLines: countLines(c.demand),
+  }));
+
   res.render("customerList", {
     ...data,
+    list,
+    summaryLen: DEMAND_SUMMARY_LEN,
     pages,
     prevLink: data.page > 1 ? pageLink("/", data.page - 1, keyword, status) : null,
     nextLink: data.page < data.totalPages ? pageLink("/", data.page + 1, keyword, status) : null,
